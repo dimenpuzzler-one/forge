@@ -57,6 +57,15 @@ forge sync --source skills-sh --metadata-only
 
 The official skills.sh API currently requires a Vercel OIDC bearer token. Configure `VERCEL_OIDC_TOKEN` in your own environment before syncing; Forge never prints it. Metadata pages are committed individually and the next page is recorded in SQLite, so an interrupted sync resumes from the saved page. Full Skill files are not fetched here.
 
+Use explicit freshness policy when you want to avoid a catalog recheck that is unlikely to add value:
+
+```powershell
+forge sync --source skills-sh --metadata-only --if-stale 6h
+forge status
+```
+
+Normal `forge sync` always rechecks the full catalog for correctness. It displays API-derived page/total progress and reports discovered, inserted, updated, unchanged, pages, duration, and request count. Identical metadata is counted as `unchanged` without rewriting its `skills` row or FTS entry. Forge deliberately does **not** provide `--changed-only`: the listing API does not safely identify a complete changed subset. Detail/hash refresh remains an explicit `forge inspect <id> --refresh` operation.
+
 ### Search the local registry
 
 ```powershell

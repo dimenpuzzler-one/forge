@@ -49,6 +49,22 @@ Generic session bundle materialization (no script execution)  PASS
 
 The missing-ID `inspect` smoke test returned the intended action-oriented error. A live sync/inspect run is blocked only by absent `VERCEL_OIDC_TOKEN`, not by an implementation failure.
 
+## Live skills.sh validation and catalog-sync lifecycle
+
+The user completed live validation against skills.sh on 2026-08-11:
+
+```text
+First metadata sync:  9,610 catalog entries stored successfully
+Local search:         successful
+Live inspect:         successful
+Immutable hash/files: stored successfully
+Upstream security audit: imported successfully
+Forge static audit:   ran separately and successfully
+Second metadata sync: 9,610 discovered / 0 inserted / 9,610 updated / 97 pages
+```
+
+The second result proved catalog correctness and exposed a write-amplification issue: before migration 3, unchanged metadata still issued an update and refreshed FTS. Migration 3 changes this to `unchanged` accounting with no `skills` or FTS write. It also records total/request statistics, emits progress from API pagination totals, exposes `forge status`/`doctor` freshness, and adds explicit `forge sync --if-stale 6h` skipping. `--changed-only` is intentionally deferred because listing-only incremental sync would sacrifice catalog correctness.
+
 ## Phase 4 details
 
 - `forge recommend [path]` derives candidates only from explicit Scanner evidence (stack, languages, domains) and local FTS results. Each result shows the rule evidence and cached-detail caution.

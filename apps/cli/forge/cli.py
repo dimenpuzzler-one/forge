@@ -5,6 +5,7 @@ import difflib
 import os
 import sqlite3
 import sys
+from datetime import UTC, datetime
 from pathlib import Path
 
 from forge_core.errors import ForgeError
@@ -32,6 +33,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     doctor = subcommands.add_parser("doctor", help="Check local Forge prerequisites without exposing secrets.")
     doctor.add_argument("--project", help="Optional project path to validate.")
+    subcommands.add_parser("status", help="Show local registry freshness and the last successful sync.")
 
     scan = subcommands.add_parser("scan", help="Create a secret-safe .forge/project.json context file.")
     scan.add_argument("path", nargs="?", help="Project path (default: current directory).")
@@ -40,6 +42,7 @@ def build_parser() -> argparse.ArgumentParser:
     sync.add_argument("--source", default="skills-sh", choices=["skills-sh"])
     sync.add_argument("--metadata-only", action="store_true", help="Required for MVP; do not fetch full skill files.")
     sync.add_argument("--per-page", type=int, default=100, help="skills.sh page size (1-500).")
+    sync.add_argument("--if-stale", help="Skip only when the last successful catalog sync is newer than this TTL (e.g. 6h).")
 
     search = subcommands.add_parser("search", help="Search locally synchronized skill metadata with SQLite FTS5.")
     search.add_argument("query")
@@ -111,6 +114,8 @@ def main(argv: list[str] | None = None) -> int:
     try:
         if args.command == "doctor":
             return _doctor(args)
+        if args.command == "status":
+            return _status(args)
         if args.command == "scan":
             return _scan(args)
         if args.command == "sync":
@@ -157,6 +162,7 @@ def _doctor(args: argparse.Namespace) -> int:
     try:
         registry.migrate()
         fts5 = registry.connection.execute("SELECT sqlite_compileoption_used('ENABLE_FTS5')").fetchone()[0]
+        source = registry.source_status("skills-sh")
     finally:
         registry.close()
     project_state = "not checked"
@@ -171,8 +177,19 @@ def _doctor(args: argparse.Namespace) -> int:
     print(f"Python: {sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}")
     print(f"skills.sh authentication: {'configured' if os.environ.get('VERCEL_OIDC_TOKEN') else 'not configured'}")
     print(f"Project path: {project_state}")
+    _print_source_freshness(source)
     if not os.environ.get("VERCEL_OIDC_TOKEN"):
         print("Note: skills.sh API sync currently requires VERCEL_OIDC_TOKEN; local scan/search remain available.")
+    return 0
+
+
+def _status(args: argparse.Namespace) -> int:
+    _, registry = _registry(args.forge_home)
+    try:
+        source = registry.source_status("skills-sh")
+    finally:
+        registry.close()
+    _print_source_freshness(source)
     return 0
 
 
@@ -193,16 +210,68 @@ def _sync(args: argparse.Namespace) -> int:
         raise ValueError("--per-page must be between 1 and 500")
     home, registry = _registry(args.forge_home)
     try:
-        stats = sync_metadata(registry, SkillsShAdapter(), per_page=args.per_page)
+        if args.if_stale:
+            ttl_seconds = _parse_ttl(args.if_stale)
+            source = registry.source_status("skills-sh")
+            if _is_fresh(source, ttl_seconds):
+                print(f"Metadata sync skipped: last successful sync is newer than {args.if_stale}.")
+                _print_source_freshness(source)
+                return 0
+        stats = sync_metadata(
+            registry,
+            SkillsShAdapter(),
+            per_page=args.per_page,
+            on_progress=lambda page, total_pages, processed, total: print(
+                f"[skills-sh] page {page}/{total_pages or '?'} · {processed:,}/{total or '?'} processed",
+                flush=True,
+            ),
+        )
     finally:
         registry.close()
     print(
         "Metadata sync complete: "
-        f"{stats['discovered']} discovered, {stats['inserted']} inserted, {stats['updated']} updated, "
-        f"{stats['pages']} page(s)."
+        f"discovered={stats['discovered']}, inserted={stats['inserted']}, updated={stats['updated']}, "
+        f"unchanged={stats['unchanged']}, pages={stats['pages']}, duration={stats['duration_seconds']:.3f}s, "
+        f"requests={stats['requests']}."
     )
     print(f"Registry: {database_path(home)}")
     return 0
+
+
+def _parse_ttl(value: str) -> float:
+    units = {"s": 1, "m": 60, "h": 3600, "d": 86400}
+    if len(value) < 2 or value[-1].casefold() not in units:
+        raise ValueError("--if-stale must be a positive duration such as 6h, 30m, or 1d.")
+    try:
+        amount = float(value[:-1])
+    except ValueError as error:
+        raise ValueError("--if-stale must be a positive duration such as 6h, 30m, or 1d.") from error
+    if amount <= 0:
+        raise ValueError("--if-stale must be positive.")
+    return amount * units[value[-1].casefold()]
+
+
+def _is_fresh(source: sqlite3.Row | None, ttl_seconds: float) -> bool:
+    if source is None or source["sync_cursor"] is not None or not source["last_sync_at"]:
+        return False
+    synced_at = datetime.fromisoformat(str(source["last_sync_at"]).replace("Z", "+00:00"))
+    return (datetime.now(UTC) - synced_at).total_seconds() < ttl_seconds
+
+
+def _print_source_freshness(source: sqlite3.Row | None) -> None:
+    if source is None or source["last_sync_at"] is None:
+        print("skills.sh catalog: never successfully synced")
+        return
+    print(f"skills.sh last successful sync: {source['last_sync_at']}")
+    if source["sync_cursor"] is not None:
+        print(f"skills.sh resumable page: {source['sync_cursor']}")
+    if source["completed_at"] is not None:
+        print(
+            "Last catalog sync: "
+            f"discovered={source['discovered']}, inserted={source['inserted']}, updated={source['updated']}, "
+            f"unchanged={source['unchanged']}, pages={source['pages']}, requests={source['request_count']}, "
+            f"catalog_total={source['catalog_total']}"
+        )
 
 
 def _search(args: argparse.Namespace) -> int:

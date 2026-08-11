@@ -38,16 +38,37 @@ class RegistryTests(unittest.TestCase):
         first = self.registry.upsert_metadata_page(
             self.source_id, [metadata()], next_page=1, run_id=self.registry.start_sync_run(self.source_id)
         )
+        first_seen = self.registry.get_skill("acme/skills/postgres")["last_seen_at"]
         second = self.registry.upsert_metadata_page(
             self.source_id, [metadata()], next_page=None, run_id=self.registry.start_sync_run(self.source_id)
         )
 
         results = self.registry.search("postgres production")
 
-        self.assertEqual({"discovered": 1, "inserted": 1, "updated": 0}, first)
-        self.assertEqual({"discovered": 1, "inserted": 0, "updated": 1}, second)
+        self.assertEqual({"discovered": 1, "inserted": 1, "updated": 0, "unchanged": 0}, first)
+        self.assertEqual({"discovered": 1, "inserted": 0, "updated": 0, "unchanged": 1}, second)
         self.assertEqual(1, len(results))
         self.assertEqual("acme/skills/postgres", results[0]["id"])
+        self.assertEqual(first_seen, self.registry.get_skill("acme/skills/postgres")["last_seen_at"])
+
+    def test_metadata_change_updates_only_the_changed_row(self) -> None:
+        run_id = self.registry.start_sync_run(self.source_id)
+        self.registry.upsert_metadata_page(self.source_id, [metadata()], next_page=None, run_id=run_id)
+        changed = SkillMetadata(
+            id="acme/skills/postgres",
+            slug="postgres",
+            name="Postgres Production",
+            description="Changed metadata",
+            source="acme/skills",
+            installs=42,
+        )
+
+        counts = self.registry.upsert_metadata_page(
+            self.source_id, [changed], next_page=None, run_id=self.registry.start_sync_run(self.source_id)
+        )
+
+        self.assertEqual({"discovered": 1, "inserted": 0, "updated": 1, "unchanged": 0}, counts)
+        self.assertEqual("Changed metadata", self.registry.get_skill("acme/skills/postgres")["description"])
 
     def test_detail_versions_are_immutable_and_scripts_are_only_flagged(self) -> None:
         run_id = self.registry.start_sync_run(self.source_id)

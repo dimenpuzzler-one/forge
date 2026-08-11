@@ -48,8 +48,12 @@ class VerticalSliceTests(unittest.TestCase):
             registry.migrate()
             adapter = SkillsShAdapter(transport=FakeTransport([(200, {}, first_page), (200, {}, detail)]), token="test")
 
-            stats = sync_metadata(registry, adapter)
+            progress = []
+            stats = sync_metadata(registry, adapter, on_progress=lambda *values: progress.append(values))
             self.assertEqual(1, stats["inserted"])
+            self.assertEqual(0, stats["unchanged"])
+            self.assertEqual(1, stats["requests"])
+            self.assertEqual([(1, None, 1, None)], progress)
             self.assertEqual(1, len(registry.search("postgres production")))
             registry.store_detail("acme/skills/postgres", adapter.fetch_skill("acme/skills/postgres"), snapshots_root=home / "snapshots")
 

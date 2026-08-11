@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import math
 import os
 import time
 from dataclasses import dataclass
@@ -38,6 +39,8 @@ class SkillPage:
     entries: list[SkillMetadata]
     page: int
     has_more: bool
+    total: int | None
+    per_page: int
 
 
 class SkillsShAdapter:
@@ -61,6 +64,7 @@ class SkillsShAdapter:
         self.timeout_seconds = timeout_seconds
         self.max_attempts = max_attempts
         self.sleep = sleep
+        self.request_count = 0
 
     def list_skills(self, *, page: int, per_page: int = 100) -> SkillPage:
         if page < 0 or not 1 <= per_page <= 500:
@@ -75,7 +79,14 @@ class SkillsShAdapter:
             raise SourceError("skills.sh returned an unexpected list response.")
         entries = [SkillMetadata.from_api(item) for item in data if isinstance(item, dict)]
         response_page = pagination.get("page", page)
-        return SkillPage(entries=entries, page=int(response_page), has_more=bool(pagination.get("hasMore", False)))
+        total = pagination.get("total")
+        return SkillPage(
+            entries=entries,
+            page=int(response_page),
+            has_more=bool(pagination.get("hasMore", False)),
+            total=int(total) if isinstance(total, int) else None,
+            per_page=int(pagination.get("perPage") or per_page),
+        )
 
     def fetch_skill(self, skill_id: str) -> dict[str, Any]:
         if not _valid_skill_id(skill_id):
@@ -109,6 +120,7 @@ class SkillsShAdapter:
         last_error: SourceError | None = None
         for attempt in range(self.max_attempts):
             try:
+                self.request_count += 1
                 status, response_headers, body = self.transport.get(url, headers, self.timeout_seconds)
             except SourceError as error:
                 last_error = error
@@ -143,30 +155,47 @@ class SkillsShAdapter:
         raise last_error
 
 
-def sync_metadata(registry: Registry, adapter: SkillsShAdapter, *, per_page: int = 100) -> dict[str, int]:
+def sync_metadata(
+    registry: Registry,
+    adapter: SkillsShAdapter,
+    *,
+    per_page: int = 100,
+    on_progress: Any | None = None,
+) -> dict[str, int]:
     """Sync pages transactionally; a page is committed before the resume cursor advances."""
     source_id = registry.ensure_source(name=adapter.name, source_type="skills_sh", base_url=adapter.base_url)
     run_id = registry.start_sync_run(source_id)
     page = registry.source_cursor(source_id) or 0
-    totals = {"pages": 0, "discovered": 0, "inserted": 0, "updated": 0}
+    started = time.monotonic()
+    totals = {"pages": 0, "discovered": 0, "inserted": 0, "updated": 0, "unchanged": 0}
     try:
         while True:
             response = adapter.list_skills(page=page, per_page=per_page)
             next_page = response.page + 1 if response.has_more else None
             counts = registry.upsert_metadata_page(
-                source_id, response.entries, next_page=next_page, run_id=run_id
+                source_id,
+                response.entries,
+                next_page=next_page,
+                run_id=run_id,
+                catalog_total=response.total,
             )
             totals["pages"] += 1
-            for key in ("discovered", "inserted", "updated"):
+            for key in ("discovered", "inserted", "updated", "unchanged"):
                 totals[key] += counts[key]
+            if on_progress is not None:
+                total_pages = math.ceil(response.total / response.per_page) if response.total else None
+                processed = min((response.page + 1) * response.per_page, response.total) if response.total else totals["discovered"]
+                on_progress(response.page + 1, total_pages, processed, response.total)
             if not response.has_more:
                 registry.mark_source_synced(source_id)
-                registry.finish_sync_run(run_id)
+                registry.finish_sync_run(run_id, request_count=adapter.request_count)
+                totals["requests"] = adapter.request_count
+                totals["duration_seconds"] = round(time.monotonic() - started, 3)
                 return totals
             page = next_page
             assert page is not None
     except Exception:
-        registry.finish_sync_run(run_id, error_count=1)
+        registry.finish_sync_run(run_id, error_count=1, request_count=adapter.request_count)
         raise
 
 

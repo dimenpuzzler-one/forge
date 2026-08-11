@@ -14,7 +14,7 @@ from forge_core.errors import ValidationError
 from forge_core.models import SkillMetadata
 
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 MAX_SKILL_FILE_BYTES = 1_048_576
 MAX_SKILL_TOTAL_BYTES = 5 * 1_048_576
 SCRIPT_SUFFIXES = {".bat", ".cmd", ".exe", ".ps1", ".py", ".sh", ".zsh"}
@@ -199,6 +199,17 @@ class Registry:
             )
             self.connection.execute("PRAGMA user_version = 2")
             self.connection.commit()
+            current = 2
+        if current < 3:
+            self.connection.executescript(
+                """
+                ALTER TABLE sync_runs ADD COLUMN unchanged INTEGER NOT NULL DEFAULT 0;
+                ALTER TABLE sync_runs ADD COLUMN request_count INTEGER NOT NULL DEFAULT 0;
+                ALTER TABLE sync_runs ADD COLUMN catalog_total INTEGER;
+                """
+            )
+            self.connection.execute("PRAGMA user_version = 3")
+            self.connection.commit()
 
     @contextmanager
     def transaction(self):
@@ -239,22 +250,35 @@ class Registry:
         self.connection.commit()
         return int(cursor.lastrowid)
 
-    def finish_sync_run(self, run_id: int, *, error_count: int = 0) -> None:
+    def finish_sync_run(self, run_id: int, *, error_count: int = 0, request_count: int | None = None) -> None:
         self.connection.execute(
-            "UPDATE sync_runs SET completed_at = ?, error_count = ? WHERE id = ?",
-            (utc_now(), error_count, run_id),
+            "UPDATE sync_runs SET completed_at = ?, error_count = ?, request_count = COALESCE(?, request_count) WHERE id = ?",
+            (utc_now(), error_count, request_count, run_id),
         )
         self.connection.commit()
 
     def upsert_metadata_page(
-        self, source_id: int, entries: Iterable[SkillMetadata], *, next_page: int | None, run_id: int
+        self,
+        source_id: int,
+        entries: Iterable[SkillMetadata],
+        *,
+        next_page: int | None,
+        run_id: int,
+        catalog_total: int | None = None,
     ) -> dict[str, int]:
-        inserted = updated = discovered = 0
+        inserted = updated = unchanged = discovered = 0
         now = utc_now()
         with self.transaction():
             for entry in entries:
                 discovered += 1
-                exists = self.connection.execute("SELECT 1 FROM skills WHERE id = ?", (entry.id,)).fetchone()
+                exists = self.connection.execute(
+                    """
+                    SELECT upstream_id, source_id, slug, name, description, source_repo, source_type,
+                        install_url, skills_sh_url, install_count, is_duplicate
+                    FROM skills WHERE id = ?
+                    """,
+                    (entry.id,),
+                ).fetchone()
                 if exists is None:
                     inserted += 1
                     self.connection.execute(
@@ -282,6 +306,8 @@ class Registry:
                             now,
                         ),
                     )
+                elif _metadata_matches(exists, source_id, entry):
+                    unchanged += 1
                 else:
                     updated += 1
                     self.connection.execute(
@@ -304,11 +330,12 @@ class Registry:
                             entry.id,
                         ),
                     )
-                self.connection.execute("DELETE FROM skills_fts WHERE skill_id = ?", (entry.id,))
-                self.connection.execute(
-                    "INSERT INTO skills_fts(skill_id, name, description, source, owner) VALUES (?, ?, ?, ?, ?)",
-                    (entry.id, entry.name, entry.description, entry.source, _source_owner(entry.source)),
-                )
+                if exists is None or not _metadata_matches(exists, source_id, entry):
+                    self.connection.execute("DELETE FROM skills_fts WHERE skill_id = ?", (entry.id,))
+                    self.connection.execute(
+                        "INSERT INTO skills_fts(skill_id, name, description, source, owner) VALUES (?, ?, ?, ?, ?)",
+                        (entry.id, entry.name, entry.description, entry.source, _source_owner(entry.source)),
+                    )
             self.connection.execute(
                 "UPDATE sources SET sync_cursor = ? WHERE id = ?",
                 (str(next_page) if next_page is not None else None, source_id),
@@ -316,16 +343,33 @@ class Registry:
             self.connection.execute(
                 """
                 UPDATE sync_runs
-                SET pages = pages + 1, discovered = discovered + ?, inserted = inserted + ?, updated = updated + ?
+                SET pages = pages + 1, discovered = discovered + ?, inserted = inserted + ?, updated = updated + ?,
+                    unchanged = unchanged + ?, request_count = request_count + 1,
+                    catalog_total = COALESCE(?, catalog_total)
                 WHERE id = ?
                 """,
-                (discovered, inserted, updated, run_id),
+                (discovered, inserted, updated, unchanged, catalog_total, run_id),
             )
-        return {"discovered": discovered, "inserted": inserted, "updated": updated}
+        return {"discovered": discovered, "inserted": inserted, "updated": updated, "unchanged": unchanged}
 
     def mark_source_synced(self, source_id: int) -> None:
         self.connection.execute("UPDATE sources SET last_sync_at = ?, sync_cursor = NULL WHERE id = ?", (utc_now(), source_id))
         self.connection.commit()
+
+    def source_status(self, name: str) -> sqlite3.Row | None:
+        return self.connection.execute(
+            """
+            SELECT s.name, s.last_sync_at, s.sync_cursor, r.discovered, r.inserted, r.updated, r.unchanged,
+                r.pages, r.request_count, r.catalog_total, r.started_at, r.completed_at, r.error_count
+            FROM sources AS s
+            LEFT JOIN sync_runs AS r ON r.id = (
+                SELECT id FROM sync_runs WHERE source_id = s.id AND completed_at IS NOT NULL
+                ORDER BY id DESC LIMIT 1
+            )
+            WHERE s.name = ?
+            """,
+            (name,),
+        ).fetchone()
 
     def search(self, query: str, *, limit: int = 20) -> list[sqlite3.Row]:
         tokens = [token for token in query.replace('"', " ").split() if token]
@@ -702,3 +746,19 @@ def _static_audit(files: list[tuple[str, str, str]]) -> dict[str, Any]:
         "signals": signals,
         "scriptCount": script_count,
     }
+
+
+def _metadata_matches(row: sqlite3.Row, source_id: int, entry: SkillMetadata) -> bool:
+    return (
+        row["upstream_id"] == entry.id
+        and row["source_id"] == source_id
+        and row["slug"] == entry.slug
+        and row["name"] == entry.name
+        and row["description"] == entry.description
+        and row["source_repo"] == entry.source
+        and row["source_type"] == entry.source_type
+        and row["install_url"] == entry.install_url
+        and row["skills_sh_url"] == entry.skills_sh_url
+        and row["install_count"] == entry.installs
+        and row["is_duplicate"] == int(entry.is_duplicate)
+    )
