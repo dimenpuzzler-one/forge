@@ -6,7 +6,7 @@ This is the implementation ledger for the phases in `FORGE_CODEX_IMPLEMENTATION_
 
 | Phase | Status | Implemented scope | Verification | Remaining / risk |
 | --- | --- | --- | --- | --- |
-| 0 — Bootstrap | Complete | Python 3.12 package layout, CLI entry point, ignore rules, ADRs, test layout | compileall; unittest; `forge doctor` | Initial Git remote/push pending first commit |
+| 0 — Bootstrap | Complete | Python 3.12 package layout, CLI entry point, ignore rules, ADRs, test layout | compileall; unittest; editable install; `forge doctor` | First push pending origin setup |
 | 1 — Project Scanner v0 | Complete | Safe root detection; legacy README selection/stub rules; bounded document scan; `.forge/project.json` | Scanner unit/regression tests; `forge scan C:\dev\forge` | More project-specific signal extractors will follow recommender needs |
 | 2 — Registry + metadata sync | Complete (fixture-tested) | Versioned SQLite schema/migration; metadata upsert; page resume cursor; retry/backoff/rate-limit handling; skills.sh adapter | Adapter contract tests and two-page integration flow | Live API requires `VERCEL_OIDC_TOKEN`; no token is available in this environment |
 | 3 — Search + Inspect | Complete (fixture-tested) | SQLite FTS5 search; local result display; on-demand detail fetch; immutable snapshot cache; path/size safety checks | Registry and end-to-end cache integration tests; local search smoke test | Live inspect also requires skills.sh authentication |
@@ -49,5 +49,4 @@ The missing-ID `inspect` smoke test returned the intended action-oriented error.
 
 | Milestone | Commit | Push |
 | --- | --- | --- |
-| Phase 0–3 initial vertical slice | Pending first commit | Pending first push |
-
+| Phase 0–3 initial vertical slice | `914dc4b` | Pending first push |
