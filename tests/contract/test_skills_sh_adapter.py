@@ -40,6 +40,7 @@ class SkillsShAdapterContractTests(unittest.TestCase):
 
         self.assertFalse(page.has_more)
         self.assertEqual("acme/skills/postgres", page.entries[0].id)
+        self.assertIn("per_page=500", adapter.transport.urls[0][0])
 
     def test_rate_limit_retries_with_retry_after(self) -> None:
         success = json.dumps({"data": [], "pagination": {"page": 0, "hasMore": False}}).encode()
@@ -59,4 +60,3 @@ class SkillsShAdapterContractTests(unittest.TestCase):
 
         with self.assertRaisesRegex(SourceError, "VERCEL_OIDC_TOKEN"):
             adapter.list_skills(page=0)
-

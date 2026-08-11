@@ -38,6 +38,16 @@ class SyncFreshnessTests(unittest.TestCase):
             self.assertIsNotNone(source["last_sync_at"])
             registry.close()
 
+    def test_default_page_size_needs_twenty_pages_for_9610_skills(self) -> None:
+        body = b'{"data":[],"pagination":{"page":0,"perPage":500,"total":9610,"hasMore":true}}'
+        adapter = SkillsShAdapter(transport=FakeTransport(body), token="test")
+
+        page = adapter.list_skills(page=0)
+
+        self.assertEqual(500, page.per_page)
+        self.assertEqual(9610, page.total)
+        self.assertEqual(20, -(-page.total // page.per_page))
+
     def test_if_stale_skips_fresh_successful_catalog(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             home = Path(temp_dir) / "home"

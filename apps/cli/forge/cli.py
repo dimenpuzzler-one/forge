@@ -41,7 +41,7 @@ def build_parser() -> argparse.ArgumentParser:
     sync = subcommands.add_parser("sync", help="Synchronize external skill metadata into the local registry.")
     sync.add_argument("--source", default="skills-sh", choices=["skills-sh"])
     sync.add_argument("--metadata-only", action="store_true", help="Required for MVP; do not fetch full skill files.")
-    sync.add_argument("--per-page", type=int, default=100, help="skills.sh page size (1-500).")
+    sync.add_argument("--per-page", type=int, default=500, help="skills.sh page size (1-500; default: 500).")
     sync.add_argument("--if-stale", help="Skip only when the last successful catalog sync is newer than this TTL (e.g. 6h).")
 
     search = subcommands.add_parser("search", help="Search locally synchronized skill metadata with SQLite FTS5.")

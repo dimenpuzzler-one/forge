@@ -64,7 +64,7 @@ forge sync --source skills-sh --metadata-only --if-stale 6h
 forge status
 ```
 
-Normal `forge sync` always rechecks the full catalog for correctness. It displays API-derived page/total progress and reports discovered, inserted, updated, unchanged, pages, duration, and request count. Identical metadata is counted as `unchanged` without rewriting its `skills` row or FTS entry. Forge deliberately does **not** provide `--changed-only`: the listing API does not safely identify a complete changed subset. Detail/hash refresh remains an explicit `forge inspect <id> --refresh` operation.
+Normal `forge sync` always rechecks the full catalog for correctness. It requests the maximum supported `500` entries per page by default (override with `--per-page 1..500`), displays API-derived page/total progress, and reports discovered, inserted, updated, unchanged, pages, duration, and request count. Identical metadata is counted as `unchanged` without rewriting its `skills` row or FTS entry. Forge deliberately does **not** provide `--changed-only`: the listing API does not safely identify a complete changed subset. Detail/hash refresh remains an explicit `forge inspect <id> --refresh` operation.
 
 ### Search the local registry
 

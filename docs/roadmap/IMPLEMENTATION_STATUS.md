@@ -65,7 +65,13 @@ Second metadata sync: 9,610 discovered / 0 inserted / 9,610 updated / 97 pages
 
 The second result proved catalog correctness and exposed a write-amplification issue: before migration 3, unchanged metadata still issued an update and refreshed FTS. Migration 3 changes this to `unchanged` accounting with no `skills` or FTS write. It also records total/request statistics, emits progress from API pagination totals, exposes `forge status`/`doctor` freshness, and adds explicit `forge sync --if-stale 6h` skipping. `--changed-only` is intentionally deferred because listing-only incremental sync would sacrifice catalog correctness.
 
+The subsequent live run after migration 3 confirmed the optimization: `9,610 discovered / 0 inserted / 0 updated / 9,610 unchanged / 97 pages / 97 requests`. This is the correct sequential 100/page baseline before the 500/page network tuning.
+
 Implementation commit: `8743176` (`improve catalog sync freshness and observability`), pushed to `origin/main`.
+
+### Pagination performance follow-up
+
+The first measured full catalog recheck took `229.094s` for `9,610` Skills over `97` requests at 100 entries/page. The bottleneck is sequential network round-trips, not database upserts. The default page size is now 500, reducing the expected listing requests to `ceil(9610 / 500) = 20`; progress and totals use the response's `perPage` and `total` fields. Sequential 500/page remains the deliberate first tuning step. Bounded concurrent fetch (for example, 4 workers) remains a future option only if a new live measurement still warrants it; it must retain ordered transactional writes, retry/backoff, and resume correctness.
 
 ## Phase 4 details
 

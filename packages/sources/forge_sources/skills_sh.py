@@ -66,7 +66,7 @@ class SkillsShAdapter:
         self.sleep = sleep
         self.request_count = 0
 
-    def list_skills(self, *, page: int, per_page: int = 100) -> SkillPage:
+    def list_skills(self, *, page: int, per_page: int = 500) -> SkillPage:
         if page < 0 or not 1 <= per_page <= 500:
             raise ValueError("page must be non-negative and per_page must be between 1 and 500")
         payload = self._get_json(
@@ -159,7 +159,7 @@ def sync_metadata(
     registry: Registry,
     adapter: SkillsShAdapter,
     *,
-    per_page: int = 100,
+    per_page: int = 500,
     on_progress: Any | None = None,
 ) -> dict[str, int]:
     """Sync pages transactionally; a page is committed before the resume cursor advances."""
