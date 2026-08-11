@@ -11,6 +11,7 @@ for package_root in (
     ROOT / "packages" / "core",
     ROOT / "packages" / "project",
     ROOT / "packages" / "registry",
+    ROOT / "packages" / "runtime",
     ROOT / "packages" / "sources",
     ROOT / "packages" / "search",
 ):

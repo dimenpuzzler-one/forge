@@ -109,6 +109,15 @@ forge outdated --project C:\dev\stockback
 
 `inspect` stores a local static-audit signal and available license metadata with the immutable version. `audit-skill` explicitly imports available upstream audit partners; no automatic audit/network refresh happens during local search. `outdated` only reports a newer **cached** version and never changes `skills.lock`; promotion remains an explicit `inspect` and `pin` decision.
 
+### Prepare a generic agent session bundle
+
+```powershell
+forge bundle "production-review" --project C:\dev\stockback
+forge use acme/skills/example --project C:\dev\stockback --goal "Review this change"
+```
+
+Both commands create a new global `sessions/session-.../` directory containing `manifest.json`, `project-context.json`, and copies of explicitly selected cached Skill files. The generic filesystem adapter always records `executeScripts: false`; it prepares reference material and does not launch an agent or execute any Skill code.
+
 ### Collect and compose Skills
 
 ```powershell
@@ -145,9 +154,9 @@ python -m unittest discover -s tests -t . -v
 
 ## Roadmap
 
-Next: generic filesystem bundles, agent adapters, project audit, and local Skill extraction. Later phases add web exploration, Skill Graphs, and research labs. These are design boundaries, not currently implemented commands.
+Next: project audit and local Skill extraction. Later phases add specialized agent adapters, web exploration, Skill Graphs, and research labs. These are design boundaries, not currently implemented commands.
 
-Current milestone: **Phase 0–6 is implemented and fixture-tested.** Live skills.sh sync/inspect/audit needs a caller-provided OIDC token; the status ledger distinguishes that external limitation from local verification. See [implementation status](docs/roadmap/IMPLEMENTATION_STATUS.md) and the [development log](docs/development-log/2026-08-11.md).
+Current milestone: **Phase 0–7 generic adapter baseline is implemented and fixture-tested.** Live skills.sh sync/inspect/audit needs a caller-provided OIDC token; the status ledger distinguishes that external limitation from local verification. See [implementation status](docs/roadmap/IMPLEMENTATION_STATUS.md) and the [development log](docs/development-log/2026-08-11.md).
 
 See [MVP-0 architecture](docs/architecture/mvp-0.md) and [ADRs](docs/decisions/) for the decisions behind the local-first, immutable, deterministic core.
 

@@ -16,7 +16,7 @@ dependencies = []
 forge = "forge.cli:main"
 
 [tool.setuptools]
-packages = ["forge", "forge_compose", "forge_core", "forge_project", "forge_registry", "forge_sources", "forge_search"]
+packages = ["forge", "forge_compose", "forge_core", "forge_project", "forge_registry", "forge_runtime", "forge_sources", "forge_search"]
 
 [tool.setuptools.package-dir]
 forge = "apps/cli/forge"
@@ -24,6 +24,7 @@ forge_compose = "packages/compose/forge_compose"
 forge_core = "packages/core/forge_core"
 forge_project = "packages/project/forge_project"
 forge_registry = "packages/registry/forge_registry"
+forge_runtime = "packages/runtime/forge_runtime"
 forge_sources = "packages/sources/forge_sources"
 forge_search = "packages/search/forge_search"
 

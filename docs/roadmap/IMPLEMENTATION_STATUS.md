@@ -13,7 +13,7 @@ This is the implementation ledger for the phases in `FORGE_CODEX_IMPLEMENTATION_
 | 4 — Recommend + pin/lock | Complete | Explainable local project recommendations; explicit immutable hash pins in project-local `skills.lock` | 14 tests, including CLI recommend → inspect-cache → pin flow | Rules are intentionally small and deterministic; richer evidence comes later |
 | 5 — Collections + composition | Complete | Local collections; provenance-preserving cached-hash composition manifests; deterministic analysis | 17 tests, including CLI collection and compose flow | No LLM ideation/play runtime yet by design |
 | 6 — Evaluation + version lifecycle | Complete | Local static audit, license status, optional upstream audit import, version refresh/diff, cached update reporting | 20 tests, including CLI diff + outdated preserving a pin | Static signals are not a safety guarantee; live audit requires OIDC |
-| 7 — Runtime + agent adapter | Not started | — | — | Generic filesystem bundle first |
+| 7 — Runtime + agent adapter | In progress | Generic filesystem session materialization and `forge bundle`/`use` | 21 tests, including isolated bundle with a script file | No specialized Agent adapter or project audit yet |
 | 8+ — Explorer, graph, labs, learning | Not started | — | — | Build only as working local slices |
 
 ## Phase 0–3 details
@@ -44,6 +44,7 @@ python -m forge --forge-home .test-forge-home search ...    PASS (expected empty
 CLI recommend → pin with cached detail hash                    PASS (integration test)
 CLI collection / compose create / show / analyze              PASS
 CLI cached-version diff / outdated (no pin mutation)          PASS
+Generic session bundle materialization (no script execution)  PASS
 ```
 
 The missing-ID `inspect` smoke test returned the intended action-oriented error. A live sync/inspect run is blocked only by absent `VERCEL_OIDC_TOKEN`, not by an implementation failure.
@@ -66,6 +67,12 @@ The missing-ID `inspect` smoke test returned the intended action-oriented error.
 - `forge inspect --refresh` is an explicit version check; new content hashes retain prior cached files.
 - `forge diff` compares two cached hashes; `forge outdated` reports newer cached versions without changing project locks; `forge audit-skill` imports upstream audits only on demand.
 
+## Phase 7 baseline details
+
+- `forge bundle` materializes a composition's selected cached hashes into a unique global session directory.
+- `forge use` does the same for a single explicitly cached immutable Skill.
+- The generic filesystem adapter creates an instruction string only; it neither starts an agent nor executes external scripts.
+
 ## Commit ledger
 
 | Milestone | Commit | Push |
@@ -73,3 +80,4 @@ The missing-ID `inspect` smoke test returned the intended action-oriented error.
 | Phase 0–3 initial vertical slice | `914dc4b`, `3ef4ea8`, `12d75e3` | Pushed to `origin/main` |
 | Phase 4 recommendation + lock | `fe57624` | Pushed to `origin/main` |
 | Phase 5 collections + composition | `b358335` | Pushed to `origin/main` |
+| Phase 6 version lifecycle + safety | `ec1be3d` | Pushed to `origin/main` |

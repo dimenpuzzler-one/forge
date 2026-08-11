@@ -14,6 +14,7 @@ from forge_project.scanner import scan_project, write_project_context
 from forge_project.lockfile import load_lockfile, pin_skill
 from forge_project.recommend import recommend_skills
 from forge_registry.database import Registry
+from forge_runtime.generic_filesystem import materialize_bundle, render_instructions
 from forge_search.service import search_skills
 from forge_sources.skills_sh import SkillsShAdapter, sync_metadata
 
@@ -93,6 +94,15 @@ def build_parser() -> argparse.ArgumentParser:
     compose_analyze = compose_commands.add_parser("analyze", help="Run deterministic compatibility checks.")
     compose_analyze.add_argument("name")
     compose_analyze.add_argument("--goal")
+
+    bundle = subcommands.add_parser("bundle", help="Materialize a safe generic-agent session from a composition.")
+    bundle.add_argument("composition")
+    bundle.add_argument("--project", help="Project root (default: current directory).")
+    bundle.add_argument("--goal", default="")
+    use = subcommands.add_parser("use", help="Materialize one explicitly cached Skill for a generic agent session.")
+    use.add_argument("skill_id")
+    use.add_argument("--project", help="Project root (default: current directory).")
+    use.add_argument("--goal", default="")
     return parser
 
 
@@ -123,6 +133,10 @@ def main(argv: list[str] | None = None) -> int:
             return _collection(args)
         if args.command == "compose":
             return _compose(args)
+        if args.command == "bundle":
+            return _bundle(args)
+        if args.command == "use":
+            return _use(args)
     except (ForgeError, ValueError, sqlite3.Error, OSError) as error:
         print(f"Forge error: {error}", file=sys.stderr)
         return 2
@@ -428,4 +442,44 @@ def _compose(args: argparse.Namespace) -> int:
                 print(f"Caution: {warning}")
     finally:
         registry.close()
+    return 0
+
+
+def _bundle(args: argparse.Namespace) -> int:
+    context = scan_project(args.project)
+    home, registry = _registry(args.forge_home)
+    try:
+        selected = manifest(registry, args.composition)
+        session = materialize_bundle(
+            registry,
+            sessions_root=home / "sessions",
+            project_context=context,
+            skills=selected["skills"],
+            goal=args.goal or selected["goal"],
+        )
+    finally:
+        registry.close()
+    print(f"Session bundle: {session}")
+    print(render_instructions(session))
+    return 0
+
+
+def _use(args: argparse.Namespace) -> int:
+    context = scan_project(args.project)
+    home, registry = _registry(args.forge_home)
+    try:
+        skill = registry.get_skill(args.skill_id)
+        if skill is None or skill["content_hash"] is None:
+            raise ValueError("Run `forge inspect <skill-id>` before using a cached immutable Skill version.")
+        session = materialize_bundle(
+            registry,
+            sessions_root=home / "sessions",
+            project_context=context,
+            skills=[{"id": args.skill_id, "hash": str(skill["content_hash"]), "role": "reference"}],
+            goal=args.goal,
+        )
+    finally:
+        registry.close()
+    print(f"Session bundle: {session}")
+    print(render_instructions(session))
     return 0
