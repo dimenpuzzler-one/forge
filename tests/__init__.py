@@ -7,6 +7,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 for package_root in (
     ROOT / "apps" / "cli",
+    ROOT / "packages" / "compose",
     ROOT / "packages" / "core",
     ROOT / "packages" / "project",
     ROOT / "packages" / "registry",
@@ -14,4 +15,3 @@ for package_root in (
     ROOT / "packages" / "search",
 ):
     sys.path.insert(0, str(package_root))
-

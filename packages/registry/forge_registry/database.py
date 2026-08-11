@@ -13,7 +13,7 @@ from forge_core.errors import ValidationError
 from forge_core.models import SkillMetadata
 
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 MAX_SKILL_FILE_BYTES = 1_048_576
 MAX_SKILL_TOTAL_BYTES = 5 * 1_048_576
 SCRIPT_SUFFIXES = {".bat", ".cmd", ".exe", ".ps1", ".py", ".sh", ".zsh"}
@@ -154,7 +154,44 @@ class Registry:
                 );
                 """
             )
-            self.connection.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
+            self.connection.execute("PRAGMA user_version = 1")
+            self.connection.commit()
+            current = 1
+        if current < 2:
+            self.connection.executescript(
+                """
+                CREATE TABLE collections (
+                    id INTEGER PRIMARY KEY,
+                    name TEXT NOT NULL UNIQUE,
+                    created_at TEXT NOT NULL
+                );
+
+                CREATE TABLE collection_skills (
+                    collection_id INTEGER NOT NULL REFERENCES collections(id),
+                    skill_id TEXT NOT NULL REFERENCES skills(id),
+                    added_at TEXT NOT NULL,
+                    PRIMARY KEY(collection_id, skill_id)
+                );
+
+                CREATE TABLE compositions (
+                    id INTEGER PRIMARY KEY,
+                    name TEXT NOT NULL UNIQUE,
+                    goal TEXT NOT NULL DEFAULT '',
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                );
+
+                CREATE TABLE composition_skills (
+                    composition_id INTEGER NOT NULL REFERENCES compositions(id),
+                    skill_id TEXT NOT NULL REFERENCES skills(id),
+                    content_hash TEXT NOT NULL,
+                    role TEXT NOT NULL,
+                    position INTEGER NOT NULL,
+                    PRIMARY KEY(composition_id, skill_id)
+                );
+                """
+            )
+            self.connection.execute("PRAGMA user_version = 2")
             self.connection.commit()
 
     @contextmanager
@@ -341,6 +378,123 @@ class Registry:
             )
         )
 
+    def create_collection(self, name: str) -> None:
+        _validate_name(name, label="Collection")
+        try:
+            self.connection.execute("INSERT INTO collections(name, created_at) VALUES (?, ?)", (name, utc_now()))
+            self.connection.commit()
+        except sqlite3.IntegrityError as error:
+            raise ValueError(f"Collection already exists: {name}") from error
+
+    def add_to_collection(self, name: str, skill_id: str) -> None:
+        collection = self.connection.execute("SELECT id FROM collections WHERE name = ?", (name,)).fetchone()
+        if collection is None:
+            raise ValueError(f"Collection not found: {name}")
+        if self.get_skill(skill_id) is None:
+            raise ValueError(f"Skill not found locally: {skill_id}")
+        self.connection.execute(
+            "INSERT OR IGNORE INTO collection_skills(collection_id, skill_id, added_at) VALUES (?, ?, ?)",
+            (collection["id"], skill_id, utc_now()),
+        )
+        self.connection.commit()
+
+    def list_collections(self) -> list[sqlite3.Row]:
+        return list(
+            self.connection.execute(
+                """
+                SELECT c.name, c.created_at, COUNT(cs.skill_id) AS skill_count
+                FROM collections AS c LEFT JOIN collection_skills AS cs ON cs.collection_id = c.id
+                GROUP BY c.id ORDER BY c.name COLLATE NOCASE
+                """
+            )
+        )
+
+    def get_collection_skills(self, name: str) -> list[sqlite3.Row]:
+        exists = self.connection.execute("SELECT 1 FROM collections WHERE name = ?", (name,)).fetchone()
+        if exists is None:
+            raise ValueError(f"Collection not found: {name}")
+        return list(
+            self.connection.execute(
+                """
+                SELECT s.* FROM collection_skills AS cs
+                JOIN collections AS c ON c.id = cs.collection_id
+                JOIN skills AS s ON s.id = cs.skill_id
+                WHERE c.name = ? ORDER BY cs.added_at, s.name COLLATE NOCASE
+                """,
+                (name,),
+            )
+        )
+
+    def create_composition(self, name: str, *, goal: str = "") -> None:
+        _validate_name(name, label="Composition")
+        now = utc_now()
+        try:
+            self.connection.execute(
+                "INSERT INTO compositions(name, goal, created_at, updated_at) VALUES (?, ?, ?, ?)",
+                (name, goal, now, now),
+            )
+            self.connection.commit()
+        except sqlite3.IntegrityError as error:
+            raise ValueError(f"Composition already exists: {name}") from error
+
+    def get_composition(self, name: str) -> sqlite3.Row | None:
+        return self.connection.execute("SELECT * FROM compositions WHERE name = ?", (name,)).fetchone()
+
+    def add_composition_skill(self, *, name: str, skill_id: str, content_hash: str, role: str) -> None:
+        composition = self.get_composition(name)
+        if composition is None:
+            raise ValueError(f"Composition not found: {name}")
+        _validate_name(role, label="Role")
+        current = self.connection.execute(
+            "SELECT position FROM composition_skills WHERE composition_id = ? AND skill_id = ?",
+            (composition["id"], skill_id),
+        ).fetchone()
+        if current is None:
+            position = int(
+                self.connection.execute(
+                    "SELECT COALESCE(MAX(position), 0) + 1 FROM composition_skills WHERE composition_id = ?",
+                    (composition["id"],),
+                ).fetchone()[0]
+            )
+            self.connection.execute(
+                """
+                INSERT INTO composition_skills(composition_id, skill_id, content_hash, role, position)
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (composition["id"], skill_id, content_hash, role, position),
+            )
+        else:
+            self.connection.execute(
+                """
+                UPDATE composition_skills SET content_hash = ?, role = ?
+                WHERE composition_id = ? AND skill_id = ?
+                """,
+                (content_hash, role, composition["id"], skill_id),
+            )
+        self.connection.execute("UPDATE compositions SET updated_at = ? WHERE id = ?", (utc_now(), composition["id"]))
+        self.connection.commit()
+
+    def get_composition_skills(self, name: str) -> list[sqlite3.Row]:
+        composition = self.get_composition(name)
+        if composition is None:
+            raise ValueError(f"Composition not found: {name}")
+        return list(
+            self.connection.execute(
+                """
+                SELECT cs.skill_id, cs.content_hash, cs.role, cs.position, s.name, s.source_repo,
+                    EXISTS(
+                        SELECT 1 FROM skill_files AS f
+                        JOIN skill_versions AS v ON v.id = f.skill_version_id
+                        WHERE v.skill_id = cs.skill_id AND v.content_hash = cs.content_hash AND f.is_script = 1
+                    ) AS has_scripts
+                FROM composition_skills AS cs
+                JOIN skills AS s ON s.id = cs.skill_id
+                WHERE cs.composition_id = ? ORDER BY cs.position
+                """,
+                (composition["id"],),
+            )
+        )
+
     def store_detail(self, skill_id: str, detail: dict[str, Any], *, snapshots_root: Path) -> tuple[int, str]:
         skill = self.get_skill(skill_id)
         if skill is None:
@@ -420,3 +574,8 @@ class Registry:
 
 def _safe_snapshot_name(skill_id: str) -> str:
     return hashlib.sha256(skill_id.encode("utf-8")).hexdigest()[:16]
+
+
+def _validate_name(value: str, *, label: str) -> None:
+    if not value or not value.strip() or len(value) > 120 or any(character in value for character in "\\/:\x00"):
+        raise ValueError(f"{label} name must be 1–120 characters and cannot contain path separators.")

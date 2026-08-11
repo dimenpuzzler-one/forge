@@ -98,6 +98,21 @@ forge pin acme/skills/example --project C:\dev\stockback --reason "production re
 
 `forge pin` requires a locally cached detail hash, then writes that exact hash to `<project>\.forge\skills.lock`. A newer upstream version never changes a pin automatically.
 
+### Collect and compose Skills
+
+```powershell
+forge collection create "production-saas"
+forge collection add "production-saas" acme/skills/example
+forge collection show "production-saas"
+
+forge compose create "production-review" --goal "Production readiness review"
+forge compose add "production-review" acme/skills/example --role database
+forge compose show "production-review"
+forge compose analyze "production-review"
+```
+
+Collections are local references. A composition stores an ordered manifest of Skill ID, source, immutable cached hash, and role; it never merges upstream files. `compose analyze` is deterministic and reports empty compositions, duplicate roles, script presence, and multi-source provenance cautions without executing anything.
+
 ## Development
 
 The repository uses a small Python monorepo boundary:
@@ -119,9 +134,9 @@ python -m unittest discover -s tests -t . -v
 
 ## Roadmap
 
-Next: collections and composition manifests. Later phases add provenance enrichment, security/audit signals, update/version lifecycle, agent session bundles, web exploration, Skill Graphs, and local Skill extraction. These are design boundaries, not currently implemented commands.
+Next: provenance enrichment, security/audit signals, and update/version lifecycle. Later phases add agent session bundles, web exploration, Skill Graphs, and local Skill extraction. These are design boundaries, not currently implemented commands.
 
-Current milestone: **Phase 0–4 is implemented and fixture-tested.** Live skills.sh sync/inspect needs a caller-provided OIDC token; the status ledger distinguishes that external limitation from local verification. See [implementation status](docs/roadmap/IMPLEMENTATION_STATUS.md) and the [development log](docs/development-log/2026-08-11.md).
+Current milestone: **Phase 0–5 is implemented and fixture-tested.** Live skills.sh sync/inspect needs a caller-provided OIDC token; the status ledger distinguishes that external limitation from local verification. See [implementation status](docs/roadmap/IMPLEMENTATION_STATUS.md) and the [development log](docs/development-log/2026-08-11.md).
 
 See [MVP-0 architecture](docs/architecture/mvp-0.md) and [ADRs](docs/decisions/) for the decisions behind the local-first, immutable, deterministic core.
 

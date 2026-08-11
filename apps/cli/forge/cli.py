@@ -8,6 +8,7 @@ from pathlib import Path
 
 from forge_core.errors import ForgeError
 from forge_core.paths import database_path, ensure_forge_home, forge_home
+from forge_compose.service import add_skill_to_composition, analyze_composition, manifest
 from forge_project.scanner import scan_project, write_project_context
 from forge_project.lockfile import pin_skill
 from forge_project.recommend import recommend_skills
@@ -55,6 +56,32 @@ def build_parser() -> argparse.ArgumentParser:
     pin.add_argument("--project", help="Project root (default: current directory).")
     pin.add_argument("--reason", default="Explicit Forge selection")
     pin.add_argument("--mode", choices=["reference"], default="reference")
+
+    collection = subcommands.add_parser("collection", help="Create and manage local Skill collections.")
+    collection_commands = collection.add_subparsers(dest="collection_command", required=True)
+    collection_create = collection_commands.add_parser("create", help="Create an empty collection.")
+    collection_create.add_argument("name")
+    collection_add = collection_commands.add_parser("add", help="Add a locally known Skill to a collection.")
+    collection_add.add_argument("name")
+    collection_add.add_argument("skill_id")
+    collection_commands.add_parser("list", help="List collections.")
+    collection_show = collection_commands.add_parser("show", help="Show collection members.")
+    collection_show.add_argument("name")
+
+    compose = subcommands.add_parser("compose", help="Build provenance-preserving Skill composition manifests.")
+    compose_commands = compose.add_subparsers(dest="compose_command", required=True)
+    compose_create = compose_commands.add_parser("create", help="Create an empty composition.")
+    compose_create.add_argument("name")
+    compose_create.add_argument("--goal", default="")
+    compose_add = compose_commands.add_parser("add", help="Add a cached immutable Skill version to a composition.")
+    compose_add.add_argument("name")
+    compose_add.add_argument("skill_id")
+    compose_add.add_argument("--role", default="general")
+    compose_show = compose_commands.add_parser("show", help="Show a composition manifest.")
+    compose_show.add_argument("name")
+    compose_analyze = compose_commands.add_parser("analyze", help="Run deterministic compatibility checks.")
+    compose_analyze.add_argument("name")
+    compose_analyze.add_argument("--goal")
     return parser
 
 
@@ -75,6 +102,10 @@ def main(argv: list[str] | None = None) -> int:
             return _recommend(args)
         if args.command == "pin":
             return _pin(args)
+        if args.command == "collection":
+            return _collection(args)
+        if args.command == "compose":
+            return _compose(args)
     except (ForgeError, ValueError, sqlite3.Error, OSError) as error:
         print(f"Forge error: {error}", file=sys.stderr)
         return 2
@@ -247,4 +278,59 @@ def _pin(args: argparse.Namespace) -> int:
         registry.close()
     print(f"Pinned {args.skill_id} at {skill['content_hash']}.")
     print(f"Lockfile: {output}")
+    return 0
+
+
+def _collection(args: argparse.Namespace) -> int:
+    _, registry = _registry(args.forge_home)
+    try:
+        if args.collection_command == "create":
+            registry.create_collection(args.name)
+            print(f"Created collection: {args.name}")
+        elif args.collection_command == "add":
+            registry.add_to_collection(args.name, args.skill_id)
+            print(f"Added {args.skill_id} to collection {args.name}.")
+        elif args.collection_command == "list":
+            collections = registry.list_collections()
+            if not collections:
+                print("No collections yet. Create one with `forge collection create <name>`.")
+            for collection in collections:
+                print(f"{collection['name']} ({collection['skill_count']} Skills)")
+        elif args.collection_command == "show":
+            skills = registry.get_collection_skills(args.name)
+            print(f"Collection: {args.name}")
+            if not skills:
+                print("  (empty)")
+            for skill in skills:
+                print(f"  - {skill['id']} — {skill['name']}")
+    finally:
+        registry.close()
+    return 0
+
+
+def _compose(args: argparse.Namespace) -> int:
+    _, registry = _registry(args.forge_home)
+    try:
+        if args.compose_command == "create":
+            registry.create_composition(args.name, goal=args.goal)
+            print(f"Created composition: {args.name}")
+        elif args.compose_command == "add":
+            add_skill_to_composition(registry, name=args.name, skill_id=args.skill_id, role=args.role)
+            print(f"Added {args.skill_id} to composition {args.name} as {args.role}.")
+        elif args.compose_command == "show":
+            composition_manifest = manifest(registry, args.name)
+            print(f"Composition: {composition_manifest['name']}")
+            print(f"Goal: {composition_manifest['goal'] or '(none)'}")
+            for skill in composition_manifest["skills"]:
+                print(f"  - {skill['role']}: {skill['id']} @ {skill['hash']}")
+        elif args.compose_command == "analyze":
+            analysis = analyze_composition(registry, name=args.name, goal=args.goal)
+            print(f"Composition: {analysis.name}")
+            print(f"Goal: {analysis.goal or '(none)'}")
+            print(f"Skills: {analysis.skill_count}")
+            print(f"Sources: {', '.join(analysis.sources) or '(none)'}")
+            for warning in analysis.warnings:
+                print(f"Caution: {warning}")
+    finally:
+        registry.close()
     return 0
