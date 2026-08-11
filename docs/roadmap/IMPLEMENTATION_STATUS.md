@@ -81,3 +81,4 @@ The missing-ID `inspect` smoke test returned the intended action-oriented error.
 | Phase 4 recommendation + lock | `fe57624` | Pushed to `origin/main` |
 | Phase 5 collections + composition | `b358335` | Pushed to `origin/main` |
 | Phase 6 version lifecycle + safety | `ec1be3d` | Pushed to `origin/main` |
+| Phase 7 generic filesystem adapter baseline | `13ebe3b` | Pushed to `origin/main` |
