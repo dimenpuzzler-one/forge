@@ -65,6 +65,8 @@ Second metadata sync: 9,610 discovered / 0 inserted / 9,610 updated / 97 pages
 
 The second result proved catalog correctness and exposed a write-amplification issue: before migration 3, unchanged metadata still issued an update and refreshed FTS. Migration 3 changes this to `unchanged` accounting with no `skills` or FTS write. It also records total/request statistics, emits progress from API pagination totals, exposes `forge status`/`doctor` freshness, and adds explicit `forge sync --if-stale 6h` skipping. `--changed-only` is intentionally deferred because listing-only incremental sync would sacrifice catalog correctness.
 
+Implementation commit: `8743176` (`improve catalog sync freshness and observability`), pushed to `origin/main`.
+
 ## Phase 4 details
 
 - `forge recommend [path]` derives candidates only from explicit Scanner evidence (stack, languages, domains) and local FTS results. Each result shows the rule evidence and cached-detail caution.
