@@ -69,6 +69,8 @@ The subsequent live run after migration 3 confirmed the optimization: `9,610 dis
 
 Implementation commit: `8743176` (`improve catalog sync freshness and observability`), pushed to `origin/main`.
 
+Pagination performance commit: `cf7bf57` (`increase skills catalog sync page size`), pushed to `origin/main`.
+
 ### Pagination performance follow-up
 
 The first measured full catalog recheck took `229.094s` for `9,610` Skills over `97` requests at 100 entries/page. The bottleneck is sequential network round-trips, not database upserts. The default page size is now 500, reducing the expected listing requests to `ceil(9610 / 500) = 20`; progress and totals use the response's `perPage` and `total` fields. Sequential 500/page remains the deliberate first tuning step. Bounded concurrent fetch (for example, 4 workers) remains a future option only if a new live measurement still warrants it; it must retain ordered transactional writes, retry/backoff, and resume correctness.
