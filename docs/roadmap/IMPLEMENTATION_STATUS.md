@@ -49,4 +49,4 @@ The missing-ID `inspect` smoke test returned the intended action-oriented error.
 
 | Milestone | Commit | Push |
 | --- | --- | --- |
-| Phase 0–3 initial vertical slice | `914dc4b` | Pending first push |
+| Phase 0–3 initial vertical slice | `914dc4b`, `3ef4ea8` | Pushed to `origin/main` |
