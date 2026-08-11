@@ -9,6 +9,8 @@ from pathlib import Path
 from forge_core.errors import ForgeError
 from forge_core.paths import database_path, ensure_forge_home, forge_home
 from forge_project.scanner import scan_project, write_project_context
+from forge_project.lockfile import pin_skill
+from forge_project.recommend import recommend_skills
 from forge_registry.database import Registry
 from forge_search.service import search_skills
 from forge_sources.skills_sh import SkillsShAdapter, sync_metadata
@@ -43,6 +45,16 @@ def build_parser() -> argparse.ArgumentParser:
     inspect = subcommands.add_parser("inspect", help="Show local metadata and cache detail on demand.")
     inspect.add_argument("skill_id")
     inspect.add_argument("--no-fetch", action="store_true", help="Do not request missing detail from skills.sh.")
+
+    recommend = subcommands.add_parser("recommend", help="Recommend local Skills from explainable project evidence.")
+    recommend.add_argument("path", nargs="?", help="Project path (default: current directory).")
+    recommend.add_argument("--limit", type=int, default=10)
+
+    pin = subcommands.add_parser("pin", help="Explicitly pin a locally cached immutable Skill version to a project.")
+    pin.add_argument("skill_id")
+    pin.add_argument("--project", help="Project root (default: current directory).")
+    pin.add_argument("--reason", default="Explicit Forge selection")
+    pin.add_argument("--mode", choices=["reference"], default="reference")
     return parser
 
 
@@ -59,6 +71,10 @@ def main(argv: list[str] | None = None) -> int:
             return _search(args)
         if args.command == "inspect":
             return _inspect(args)
+        if args.command == "recommend":
+            return _recommend(args)
+        if args.command == "pin":
+            return _pin(args)
     except (ForgeError, ValueError, sqlite3.Error, OSError) as error:
         print(f"Forge error: {error}", file=sys.stderr)
         return 2
@@ -183,4 +199,52 @@ def _inspect(args: argparse.Namespace) -> int:
     if entrypoint is not None:
         print("\nSKILL.md:\n")
         print(entrypoint["contents"])
+    return 0
+
+
+def _recommend(args: argparse.Namespace) -> int:
+    if args.limit < 1 or args.limit > 50:
+        raise ValueError("--limit must be between 1 and 50")
+    context = scan_project(args.path)
+    _, registry = _registry(args.forge_home)
+    try:
+        recommendations = recommend_skills(registry, context, limit=args.limit)
+    finally:
+        registry.close()
+    if not recommendations:
+        print("No project-aware local recommendations yet. Run `forge sync --source skills-sh --metadata-only` first.")
+        return 0
+    for index, recommendation in enumerate(recommendations, start=1):
+        print(f"{index}. {recommendation.name} ({recommendation.skill_id})")
+        print(f"   reason: {recommendation.reason}")
+        for evidence in recommendation.evidence:
+            print(f"   evidence: {evidence}")
+        for risk in recommendation.risks:
+            print(f"   caution: {risk}")
+    return 0
+
+
+def _pin(args: argparse.Namespace) -> int:
+    context = scan_project(args.project)
+    _, registry = _registry(args.forge_home)
+    try:
+        skill = registry.get_skill(args.skill_id)
+        if skill is None:
+            raise ValueError(f"Skill not found locally: {args.skill_id}. Search and inspect it before pinning.")
+        if skill["content_hash"] is None:
+            raise ValueError(
+                "Skill detail is not cached. Run `forge inspect <skill-id>` first to select an immutable version."
+            )
+        output = pin_skill(
+            context["root"],
+            skill_id=args.skill_id,
+            source=str(skill["source_repo"]),
+            content_hash=str(skill["content_hash"]),
+            reason=args.reason,
+            mode=args.mode,
+        )
+    finally:
+        registry.close()
+    print(f"Pinned {args.skill_id} at {skill['content_hash']}.")
+    print(f"Lockfile: {output}")
     return 0

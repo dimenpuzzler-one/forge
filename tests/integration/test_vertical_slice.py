@@ -5,6 +5,8 @@ from pathlib import Path
 
 from forge_registry.database import Registry
 from forge_sources.skills_sh import SkillsShAdapter, sync_metadata
+from forge_project.lockfile import load_lockfile, pin_skill
+from forge_project.recommend import recommend_skills
 
 
 class FakeTransport:
@@ -54,4 +56,20 @@ class VerticalSliceTests(unittest.TestCase):
             skill = registry.get_skill("acme/skills/postgres")
             self.assertEqual("skill-hash", skill["content_hash"])
             self.assertEqual("# Production Postgres", registry.get_files("acme/skills/postgres")[0]["contents"])
+
+            recommendations = recommend_skills(
+                registry,
+                {"stack": ["supabase"], "domains": [], "languages": ["python"]},
+            )
+            self.assertTrue(recommendations)
+            project = home / "sample-project"
+            project.mkdir()
+            pin_skill(
+                project,
+                skill_id="acme/skills/postgres",
+                source="acme/skills",
+                content_hash=str(skill["content_hash"]),
+                reason="integration selection",
+            )
+            self.assertEqual("skill-hash", load_lockfile(project)["skills"][0]["hash"])
             registry.close()

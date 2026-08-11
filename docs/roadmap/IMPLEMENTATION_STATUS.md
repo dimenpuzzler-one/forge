@@ -10,7 +10,7 @@ This is the implementation ledger for the phases in `FORGE_CODEX_IMPLEMENTATION_
 | 1 — Project Scanner v0 | Complete | Safe root detection; legacy README selection/stub rules; bounded document scan; `.forge/project.json` | Scanner unit/regression tests; `forge scan C:\dev\forge` | More project-specific signal extractors will follow recommender needs |
 | 2 — Registry + metadata sync | Complete (fixture-tested) | Versioned SQLite schema/migration; metadata upsert; page resume cursor; retry/backoff/rate-limit handling; skills.sh adapter | Adapter contract tests and two-page integration flow | Live API requires `VERCEL_OIDC_TOKEN`; no token is available in this environment |
 | 3 — Search + Inspect | Complete (fixture-tested) | SQLite FTS5 search; local result display; on-demand detail fetch; immutable snapshot cache; path/size safety checks | Registry and end-to-end cache integration tests; local search smoke test | Live inspect also requires skills.sh authentication |
-| 4 — Recommend + pin/lock | Not started | — | — | Next vertical slice |
+| 4 — Recommend + pin/lock | Complete | Explainable local project recommendations; explicit immutable hash pins in project-local `skills.lock` | 14 tests, including CLI recommend → inspect-cache → pin flow | Rules are intentionally small and deterministic; richer evidence comes later |
 | 5 — Collections + composition | Not started | — | — | Follows project-use workflow |
 | 6 — Evaluation + version lifecycle | Not started | — | — | Security, license, diff, update availability |
 | 7 — Runtime + agent adapter | Not started | — | — | Generic filesystem bundle first |
@@ -41,9 +41,16 @@ python -m unittest discover -s tests -t . -v                PASS (11 tests)
 python -m forge --forge-home .test-forge-home doctor        PASS
 python -m forge scan C:\dev\forge                           PASS
 python -m forge --forge-home .test-forge-home search ...    PASS (expected empty local registry)
+CLI recommend → pin with cached detail hash                    PASS (integration test)
 ```
 
 The missing-ID `inspect` smoke test returned the intended action-oriented error. A live sync/inspect run is blocked only by absent `VERCEL_OIDC_TOKEN`, not by an implementation failure.
+
+## Phase 4 details
+
+- `forge recommend [path]` derives candidates only from explicit Scanner evidence (stack, languages, domains) and local FTS results. Each result shows the rule evidence and cached-detail caution.
+- `forge pin <skill-id>` refuses metadata-only entries; it writes an exact locally cached content hash to `<project>/.forge/skills.lock` only after an explicit invocation.
+- `packages/project/forge_project/recommend.py` and `lockfile.py` keep recommendation and lock serialization outside the CLI boundary.
 
 ## Commit ledger
 
