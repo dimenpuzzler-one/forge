@@ -81,6 +81,8 @@ Forge resolves skills.sh authentication without depending on the current directo
 
 Live acceptance from `C:\dev\oracross`: `forge search`, `forge inspect --refresh`, and `forge audit-skill` all succeeded through global Forge authentication; live audit partners and Forge static audit returned results without exposing the token.
 
+Implementation commit: `bde9c7d` (`make skills auth independent of project cwd`), pushed to `origin/main`.
+
 ## Phase 4 details
 
 - `forge recommend [path]` derives candidates only from explicit Scanner evidence (stack, languages, domains) and local FTS results. Each result shows the rule evidence and cached-detail caution.
