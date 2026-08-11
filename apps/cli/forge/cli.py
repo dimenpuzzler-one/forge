@@ -10,6 +10,7 @@ from pathlib import Path
 
 from forge_core.errors import ForgeError
 from forge_core.paths import database_path, ensure_forge_home, forge_home
+from forge_core.auth import resolve_skills_sh_auth
 from forge_compose.service import add_skill_to_composition, analyze_composition, manifest
 from forge_project.scanner import scan_project, write_project_context
 from forge_project.lockfile import load_lockfile, pin_skill
@@ -175,11 +176,13 @@ def _doctor(args: argparse.Namespace) -> int:
     print("Registry schema: OK")
     print(f"SQLite FTS5: {'available' if fts5 else 'unavailable'}")
     print(f"Python: {sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}")
-    print(f"skills.sh authentication: {'configured' if os.environ.get('VERCEL_OIDC_TOKEN') else 'not configured'}")
+    auth = resolve_skills_sh_auth(home=home)
+    print(f"skills.sh auth: {'available' if auth.token else 'missing'}")
+    print(f"auth source: {auth.source}")
     print(f"Project path: {project_state}")
     _print_source_freshness(source)
-    if not os.environ.get("VERCEL_OIDC_TOKEN"):
-        print("Note: skills.sh API sync currently requires VERCEL_OIDC_TOKEN; local scan/search remain available.")
+    if not auth.token:
+        print("Note: configure VERCEL_OIDC_TOKEN or Forge-local credentials.env; local scan/search remain available.")
     return 0
 
 
@@ -219,7 +222,7 @@ def _sync(args: argparse.Namespace) -> int:
                 return 0
         stats = sync_metadata(
             registry,
-            SkillsShAdapter(),
+            SkillsShAdapter(forge_home=str(home)),
             per_page=args.per_page,
             on_progress=lambda page, total_pages, processed, total: print(
                 f"[skills-sh] page {page}/{total_pages or '?'} · {processed:,}/{total or '?'} processed",
@@ -289,7 +292,7 @@ def _search(args: argparse.Namespace) -> int:
         description = str(result["description"] or "").replace("\n", " ").strip()
         if len(description) > 160:
             description = f"{description[:157]}..."
-        print(f"{index}. {result['id']} — {result['name']}")
+        print(f"{index}. {result['id']} - {result['name']}")
         print(f"   source: {result['source_repo']} | installs: {result['install_count']}")
         if description:
             print(f"   {description}")
@@ -303,7 +306,7 @@ def _inspect(args: argparse.Namespace) -> int:
         if skill is None:
             raise ValueError(f"Skill not found locally: {args.skill_id}. Run `forge search` or `forge sync` first.")
         if (skill["latest_seen_version_id"] is None or args.refresh) and not args.no_fetch:
-            adapter = SkillsShAdapter()
+            adapter = SkillsShAdapter(forge_home=str(home))
             detail = adapter.fetch_skill(args.skill_id)
             registry.store_detail(args.skill_id, detail, snapshots_root=home / "snapshots")
             skill = registry.get_skill(args.skill_id)
@@ -336,11 +339,11 @@ def _inspect(args: argparse.Namespace) -> int:
 
 
 def _audit_skill(args: argparse.Namespace) -> int:
-    _, registry = _registry(args.forge_home)
+    home, registry = _registry(args.forge_home)
     try:
         if registry.get_skill(args.skill_id) is None:
             raise ValueError(f"Skill not found locally: {args.skill_id}")
-        audits = SkillsShAdapter().fetch_audit(args.skill_id)
+        audits = SkillsShAdapter(forge_home=str(home)).fetch_audit(args.skill_id)
         registry.store_external_audits(args.skill_id, audits)
         cached = registry.get_audits(args.skill_id)
     finally:
@@ -480,7 +483,7 @@ def _collection(args: argparse.Namespace) -> int:
             if not skills:
                 print("  (empty)")
             for skill in skills:
-                print(f"  - {skill['id']} — {skill['name']}")
+                print(f"  - {skill['id']} - {skill['name']}")
     finally:
         registry.close()
     return 0

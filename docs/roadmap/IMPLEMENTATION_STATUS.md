@@ -75,6 +75,12 @@ Pagination performance commit: `cf7bf57` (`increase skills catalog sync page siz
 
 The first measured full catalog recheck took `229.094s` for `9,610` Skills over `97` requests at 100 entries/page. The bottleneck is sequential network round-trips, not database upserts. The default page size is now 500, reducing the expected listing requests to `ceil(9610 / 500) = 20`; progress and totals use the response's `perPage` and `total` fields. Sequential 500/page remains the deliberate first tuning step. Bounded concurrent fetch (for example, 4 workers) remains a future option only if a new live measurement still warrants it; it must retain ordered transactional writes, retry/backoff, and resume correctness.
 
+## Global skills.sh authentication
+
+Forge resolves skills.sh authentication without depending on the current directory: process `VERCEL_OIDC_TOKEN` first, then the Forge-owned `<FORGE_HOME>/credentials.env`, then the known Forge checkout `.env.local` for development compatibility. It never searches a target project's `.env` file. The current token was migrated as a single `VERCEL_OIDC_TOKEN` entry into `C:\Users\beric\.forge\credentials.env` with current-user-only ACLs. `forge doctor` exposes only availability and source labels.
+
+Live acceptance from `C:\dev\oracross`: `forge search`, `forge inspect --refresh`, and `forge audit-skill` all succeeded through global Forge authentication; live audit partners and Forge static audit returned results without exposing the token.
+
 ## Phase 4 details
 
 - `forge recommend [path]` derives candidates only from explicit Scanner evidence (stack, languages, domains) and local FTS results. Each result shows the rule evidence and cached-detail caution.

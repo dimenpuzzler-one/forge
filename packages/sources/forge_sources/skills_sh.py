@@ -12,6 +12,7 @@ from urllib.request import Request, urlopen
 
 from forge_core.errors import SourceError
 from forge_core.models import SkillMetadata
+from forge_core.auth import SkillsShAuth, resolve_skills_sh_auth
 from forge_registry.database import Registry
 
 
@@ -53,13 +54,15 @@ class SkillsShAdapter:
         *,
         base_url: str = DEFAULT_BASE_URL,
         token: str | None = None,
+        forge_home: str | None = None,
         transport: Transport | None = None,
         timeout_seconds: float = 20.0,
         max_attempts: int = 3,
         sleep: Any = time.sleep,
     ):
         self.base_url = base_url.rstrip("/")
-        self.token = token if token is not None else os.environ.get("VERCEL_OIDC_TOKEN")
+        self.auth = SkillsShAuth(token, "explicit") if token is not None else resolve_skills_sh_auth(home=forge_home)
+        self.token = self.auth.token
         self.transport = transport or UrllibTransport()
         self.timeout_seconds = timeout_seconds
         self.max_attempts = max_attempts

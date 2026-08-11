@@ -24,3 +24,10 @@ def ensure_forge_home(explicit: str | Path | None = None) -> Path:
 def database_path(explicit_home: str | Path | None = None) -> Path:
     return forge_home(explicit_home) / "forge.db"
 
+
+def forge_install_root() -> Path | None:
+    """Find the Forge checkout only from this installed module's path, never from the current directory."""
+    for candidate in Path(__file__).resolve().parents:
+        if (candidate / "pyproject.toml").is_file() and (candidate / "apps" / "cli").is_dir():
+            return candidate
+    return None

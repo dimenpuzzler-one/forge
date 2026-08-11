@@ -14,6 +14,7 @@ forge inspect <skill-id>
 ## Safety and storage boundaries
 
 - Forge source code and external Skill data are separate. Registry data lives in `FORGE_HOME`, or `~/.forge` when it is unset.
+- skills.sh auth is global: Forge uses `VERCEL_OIDC_TOKEN` from the process first, then `<FORGE_HOME>/credentials.env`, then the known Forge checkout `.env.local` for development compatibility. It never searches the current project or target project for `.env` files.
 - External `SKILL.md` files and scripts are untrusted data. Forge does not execute them during sync, search, or inspect.
 - Detail caching validates paths and size before writing an immutable snapshot. Script files are explicitly marked, never run.
 - Project scanning excludes `.env*`, credentials, private keys, Git internals, dependency folders, build outputs, binary data, and large files.
@@ -37,6 +38,14 @@ forge doctor
 ```
 
 `FORGE_HOME` is global registry storage; it is not the `.forge` directory that `forge scan` creates inside a scanned project.
+
+For persistent local skills.sh authentication, put only the required token in the global, Git-unrelated file:
+
+```text
+%USERPROFILE%\.forge\credentials.env
+```
+
+`forge doctor` reports only `skills.sh auth: available|missing` and `auth source: process-env|forge-local-env|none`; it never prints the token.
 
 ## Commands implemented in MVP-0
 
