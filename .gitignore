@@ -1,0 +1,15 @@
+# Forge source repository: user data belongs outside this tree by default.
+.forge/
+.test-forge-home/
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+dist/
+build/
+.env
+.env.*
+!.env.example

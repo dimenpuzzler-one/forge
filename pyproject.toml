@@ -1,0 +1,32 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "forge-skill-toolkit"
+version = "0.1.0"
+description = "Local-first skill exploration and engineering toolkit"
+readme = "README.md"
+requires-python = ">=3.12"
+license = { text = "MIT" }
+authors = [{ name = "Forge contributors" }]
+dependencies = []
+
+[project.scripts]
+forge = "forge.cli:main"
+
+[tool.setuptools]
+packages = ["forge", "forge_core", "forge_project", "forge_registry", "forge_sources", "forge_search"]
+
+[tool.setuptools.package-dir]
+forge = "apps/cli/forge"
+forge_core = "packages/core/forge_core"
+forge_project = "packages/project/forge_project"
+forge_registry = "packages/registry/forge_registry"
+forge_sources = "packages/sources/forge_sources"
+forge_search = "packages/search/forge_search"
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+

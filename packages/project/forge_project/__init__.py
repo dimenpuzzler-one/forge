@@ -1,0 +1,2 @@
+"""Safe project-context collection."""
+
