@@ -85,6 +85,20 @@ class SkillsShAdapter:
             raise SourceError("skills.sh detail response did not match the requested skill id.")
         return payload
 
+    def fetch_audit(self, skill_id: str) -> list[dict[str, Any]]:
+        if not _valid_skill_id(skill_id):
+            raise ValueError(f"Invalid skills.sh skill id: {skill_id!r}")
+        try:
+            payload = self._get_json(f"/api/v1/skills/audit/{quote(skill_id, safe='/')}", {})
+        except SourceError as error:
+            if error.status == 404:
+                return []
+            raise
+        audits = payload.get("audits")
+        if not isinstance(audits, list):
+            raise SourceError("skills.sh returned an unexpected audit response.")
+        return [audit for audit in audits if isinstance(audit, dict)]
+
     def _get_json(self, endpoint: str, parameters: dict[str, object]) -> dict[str, Any]:
         url = f"{self.base_url}{endpoint}"
         if parameters:

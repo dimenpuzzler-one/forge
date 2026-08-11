@@ -12,7 +12,7 @@ This is the implementation ledger for the phases in `FORGE_CODEX_IMPLEMENTATION_
 | 3 — Search + Inspect | Complete (fixture-tested) | SQLite FTS5 search; local result display; on-demand detail fetch; immutable snapshot cache; path/size safety checks | Registry and end-to-end cache integration tests; local search smoke test | Live inspect also requires skills.sh authentication |
 | 4 — Recommend + pin/lock | Complete | Explainable local project recommendations; explicit immutable hash pins in project-local `skills.lock` | 14 tests, including CLI recommend → inspect-cache → pin flow | Rules are intentionally small and deterministic; richer evidence comes later |
 | 5 — Collections + composition | Complete | Local collections; provenance-preserving cached-hash composition manifests; deterministic analysis | 17 tests, including CLI collection and compose flow | No LLM ideation/play runtime yet by design |
-| 6 — Evaluation + version lifecycle | Not started | — | — | Security, license, diff, update availability |
+| 6 — Evaluation + version lifecycle | Complete | Local static audit, license status, optional upstream audit import, version refresh/diff, cached update reporting | 20 tests, including CLI diff + outdated preserving a pin | Static signals are not a safety guarantee; live audit requires OIDC |
 | 7 — Runtime + agent adapter | Not started | — | — | Generic filesystem bundle first |
 | 8+ — Explorer, graph, labs, learning | Not started | — | — | Build only as working local slices |
 
@@ -43,6 +43,7 @@ python -m forge scan C:\dev\forge                           PASS
 python -m forge --forge-home .test-forge-home search ...    PASS (expected empty local registry)
 CLI recommend → pin with cached detail hash                    PASS (integration test)
 CLI collection / compose create / show / analyze              PASS
+CLI cached-version diff / outdated (no pin mutation)          PASS
 ```
 
 The missing-ID `inspect` smoke test returned the intended action-oriented error. A live sync/inspect run is blocked only by absent `VERCEL_OIDC_TOKEN`, not by an implementation failure.
@@ -59,9 +60,16 @@ The missing-ID `inspect` smoke test returned the intended action-oriented error.
 - `forge collection` stores local Skill references without copying source content.
 - `forge compose` requires cached immutable versions and stores only ID/source/hash/role/position. Its deterministic analysis flags risk signals but does not execute scripts.
 
+## Phase 6 details
+
+- Detail cache writes a local static audit (`forge-static`) with script, suspicious download/payload, and credential-exfiltration signals, plus a license status when the detail provides one.
+- `forge inspect --refresh` is an explicit version check; new content hashes retain prior cached files.
+- `forge diff` compares two cached hashes; `forge outdated` reports newer cached versions without changing project locks; `forge audit-skill` imports upstream audits only on demand.
+
 ## Commit ledger
 
 | Milestone | Commit | Push |
 | --- | --- | --- |
 | Phase 0–3 initial vertical slice | `914dc4b`, `3ef4ea8`, `12d75e3` | Pushed to `origin/main` |
 | Phase 4 recommendation + lock | `fe57624` | Pushed to `origin/main` |
+| Phase 5 collections + composition | `b358335` | Pushed to `origin/main` |

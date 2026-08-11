@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import sqlite3
 from collections.abc import Iterable
 from contextlib import contextmanager
@@ -17,6 +18,11 @@ SCHEMA_VERSION = 2
 MAX_SKILL_FILE_BYTES = 1_048_576
 MAX_SKILL_TOTAL_BYTES = 5 * 1_048_576
 SCRIPT_SUFFIXES = {".bat", ".cmd", ".exe", ".ps1", ".py", ".sh", ".zsh"}
+SUSPICIOUS_PATTERNS = {
+    "network download command": re.compile(r"\b(curl|wget|invoke-webrequest|iwr)\b", re.IGNORECASE),
+    "encoded payload": re.compile(r"\b(base64|frombase64string)\b", re.IGNORECASE),
+    "credential exfiltration language": re.compile(r"\b(send|upload|post).{0,80}\b(token|secret|credential|api[_ -]?key)\b", re.IGNORECASE | re.DOTALL),
+}
 
 
 def utc_now() -> str:
@@ -357,7 +363,8 @@ class Registry:
     def get_skill(self, skill_id: str) -> sqlite3.Row | None:
         return self.connection.execute(
             """
-            SELECT s.*, v.content_hash, v.file_count, v.total_bytes, v.security_status, v.risk_level
+            SELECT s.*, v.content_hash, v.file_count, v.total_bytes, v.license_spdx, v.license_status,
+                v.security_status, v.risk_level
             FROM skills AS s
             LEFT JOIN skill_versions AS v ON v.id = s.latest_seen_version_id
             WHERE s.id = ?
@@ -530,14 +537,30 @@ class Registry:
             content_hash = digest.hexdigest()
         snapshot_root = snapshots_root / "skills-sh" / _safe_snapshot_name(skill_id) / content_hash
         snapshot_root.mkdir(parents=True, exist_ok=True)
+        license_value = detail.get("license")
+        license_spdx = license_value.strip() if isinstance(license_value, str) and license_value.strip() else None
+        license_status = "known" if license_spdx else "unknown"
+        static_audit = _static_audit(files)
         with self.transaction():
             self.connection.execute(
                 """
-                INSERT INTO skill_versions(skill_id, content_hash, observed_at, file_count, total_bytes)
-                VALUES (?, ?, ?, ?, ?)
+                INSERT INTO skill_versions(
+                    skill_id, content_hash, observed_at, file_count, total_bytes, license_spdx,
+                    license_status, security_status, risk_level
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(skill_id, content_hash) DO NOTHING
                 """,
-                (skill_id, content_hash, utc_now(), len(files), total_bytes),
+                (
+                    skill_id,
+                    content_hash,
+                    utc_now(),
+                    len(files),
+                    total_bytes,
+                    license_spdx,
+                    license_status,
+                    static_audit["status"],
+                    static_audit["risk_level"],
+                ),
             )
             version = self.connection.execute(
                 "SELECT id FROM skill_versions WHERE skill_id = ? AND content_hash = ?", (skill_id, content_hash)
@@ -568,8 +591,79 @@ class Registry:
                         int(suffix in SCRIPT_SUFFIXES),
                     ),
                 )
+            self.connection.execute(
+                """
+                INSERT INTO security_audits(skill_version_id, provider, status, risk_level, summary, audited_at, raw_json)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(skill_version_id, provider) DO UPDATE SET
+                    status = excluded.status, risk_level = excluded.risk_level, summary = excluded.summary,
+                    audited_at = excluded.audited_at, raw_json = excluded.raw_json
+                """,
+                (
+                    version_id,
+                    "forge-static",
+                    static_audit["status"],
+                    static_audit["risk_level"],
+                    static_audit["summary"],
+                    utc_now(),
+                    json.dumps(static_audit, ensure_ascii=False),
+                ),
+            )
             self.connection.execute("UPDATE skills SET latest_seen_version_id = ? WHERE id = ?", (version_id, skill_id))
         return version_id, content_hash
+
+    def get_version_files(self, skill_id: str, content_hash: str) -> list[sqlite3.Row]:
+        return list(
+            self.connection.execute(
+                """
+                SELECT f.* FROM skill_files AS f JOIN skill_versions AS v ON v.id = f.skill_version_id
+                WHERE v.skill_id = ? AND v.content_hash = ? ORDER BY f.path
+                """,
+                (skill_id, content_hash),
+            )
+        )
+
+    def get_audits(self, skill_id: str) -> list[sqlite3.Row]:
+        return list(
+            self.connection.execute(
+                """
+                SELECT a.* FROM security_audits AS a
+                JOIN skills AS s ON s.latest_seen_version_id = a.skill_version_id
+                WHERE s.id = ? ORDER BY a.provider
+                """,
+                (skill_id,),
+            )
+        )
+
+    def store_external_audits(self, skill_id: str, audits: list[dict[str, Any]]) -> int:
+        skill = self.get_skill(skill_id)
+        if skill is None or skill["latest_seen_version_id"] is None:
+            raise ValueError("Cache a Skill detail before importing its security audit.")
+        version_id = int(skill["latest_seen_version_id"])
+        for audit in audits:
+            provider = str(audit.get("provider") or audit.get("slug") or "skills-sh")
+            status = str(audit.get("status") or "unknown").casefold()
+            risk = str(audit.get("riskLevel") or "unknown").casefold()
+            self.connection.execute(
+                """
+                INSERT INTO security_audits(skill_version_id, provider, status, risk_level, summary, audited_at, raw_json)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(skill_version_id, provider) DO UPDATE SET
+                    status = excluded.status, risk_level = excluded.risk_level, summary = excluded.summary,
+                    audited_at = excluded.audited_at, raw_json = excluded.raw_json
+                """,
+                (
+                    version_id,
+                    provider,
+                    status,
+                    risk,
+                    str(audit.get("summary") or ""),
+                    str(audit.get("auditedAt") or utc_now()),
+                    json.dumps(audit, ensure_ascii=False),
+                ),
+            )
+        self.connection.commit()
+        return len(audits)
 
 
 def _safe_snapshot_name(skill_id: str) -> str:
@@ -579,3 +673,32 @@ def _safe_snapshot_name(skill_id: str) -> str:
 def _validate_name(value: str, *, label: str) -> None:
     if not value or not value.strip() or len(value) > 120 or any(character in value for character in "\\/:\x00"):
         raise ValueError(f"{label} name must be 1–120 characters and cannot contain path separators.")
+
+
+def _static_audit(files: list[tuple[str, str, str]]) -> dict[str, Any]:
+    signals: list[dict[str, str]] = []
+    script_count = 0
+    for path, contents, _ in files:
+        suffix = PurePosixPath(path).suffix.casefold()
+        if suffix in SCRIPT_SUFFIXES:
+            script_count += 1
+        for label, pattern in SUSPICIOUS_PATTERNS.items():
+            if pattern.search(contents):
+                signals.append({"path": path, "signal": label})
+    if signals:
+        status, risk_level = "warn", "medium"
+        summary = f"Static review found {len(signals)} suspicious signal(s); inspect before using."
+    elif script_count:
+        status, risk_level = "warn", "low"
+        summary = f"Static review found {script_count} script file(s); scripts are not executed by Forge."
+    else:
+        status, risk_level = "pass", "low"
+        summary = "No static risk signals found. This is not a safety guarantee."
+    return {
+        "provider": "forge-static",
+        "status": status,
+        "risk_level": risk_level,
+        "summary": summary,
+        "signals": signals,
+        "scriptCount": script_count,
+    }

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import difflib
 import os
 import sqlite3
 import sys
@@ -10,7 +11,7 @@ from forge_core.errors import ForgeError
 from forge_core.paths import database_path, ensure_forge_home, forge_home
 from forge_compose.service import add_skill_to_composition, analyze_composition, manifest
 from forge_project.scanner import scan_project, write_project_context
-from forge_project.lockfile import pin_skill
+from forge_project.lockfile import load_lockfile, pin_skill
 from forge_project.recommend import recommend_skills
 from forge_registry.database import Registry
 from forge_search.service import search_skills
@@ -46,6 +47,16 @@ def build_parser() -> argparse.ArgumentParser:
     inspect = subcommands.add_parser("inspect", help="Show local metadata and cache detail on demand.")
     inspect.add_argument("skill_id")
     inspect.add_argument("--no-fetch", action="store_true", help="Do not request missing detail from skills.sh.")
+    inspect.add_argument("--refresh", action="store_true", help="Explicitly fetch detail again to detect a new immutable version.")
+
+    audit_skill = subcommands.add_parser("audit-skill", help="Import available upstream audit results for a cached Skill.")
+    audit_skill.add_argument("skill_id")
+    outdated = subcommands.add_parser("outdated", help="Show project pins with a newer cached registry version available.")
+    outdated.add_argument("--project", help="Project root (default: current directory).")
+    diff = subcommands.add_parser("diff", help="Compare two cached immutable versions of one Skill.")
+    diff.add_argument("skill_id")
+    diff.add_argument("old_hash")
+    diff.add_argument("new_hash")
 
     recommend = subcommands.add_parser("recommend", help="Recommend local Skills from explainable project evidence.")
     recommend.add_argument("path", nargs="?", help="Project path (default: current directory).")
@@ -98,6 +109,12 @@ def main(argv: list[str] | None = None) -> int:
             return _search(args)
         if args.command == "inspect":
             return _inspect(args)
+        if args.command == "audit-skill":
+            return _audit_skill(args)
+        if args.command == "outdated":
+            return _outdated(args)
+        if args.command == "diff":
+            return _diff(args)
         if args.command == "recommend":
             return _recommend(args)
         if args.command == "pin":
@@ -202,7 +219,7 @@ def _inspect(args: argparse.Namespace) -> int:
         skill = registry.get_skill(args.skill_id)
         if skill is None:
             raise ValueError(f"Skill not found locally: {args.skill_id}. Run `forge search` or `forge sync` first.")
-        if skill["latest_seen_version_id"] is None and not args.no_fetch:
+        if (skill["latest_seen_version_id"] is None or args.refresh) and not args.no_fetch:
             adapter = SkillsShAdapter()
             detail = adapter.fetch_skill(args.skill_id)
             registry.store_detail(args.skill_id, detail, snapshots_root=home / "snapshots")
@@ -219,6 +236,8 @@ def _inspect(args: argparse.Namespace) -> int:
     print(f"Cached detail: {'yes' if skill['latest_seen_version_id'] is not None else 'no'}")
     if skill["content_hash"]:
         print(f"Current hash: {skill['content_hash']}")
+    print(f"License: {skill['license_spdx'] or 'unknown'}")
+    print(f"Static security: {skill['security_status']} / {skill['risk_level']}")
     if not files:
         print("No cached files. Re-run without --no-fetch after configuring skills.sh authentication.")
         return 0
@@ -230,6 +249,82 @@ def _inspect(args: argparse.Namespace) -> int:
     if entrypoint is not None:
         print("\nSKILL.md:\n")
         print(entrypoint["contents"])
+    return 0
+
+
+def _audit_skill(args: argparse.Namespace) -> int:
+    _, registry = _registry(args.forge_home)
+    try:
+        if registry.get_skill(args.skill_id) is None:
+            raise ValueError(f"Skill not found locally: {args.skill_id}")
+        audits = SkillsShAdapter().fetch_audit(args.skill_id)
+        registry.store_external_audits(args.skill_id, audits)
+        cached = registry.get_audits(args.skill_id)
+    finally:
+        registry.close()
+    if not cached:
+        print("No upstream audit is available yet. Local static checks remain available through `forge inspect`.")
+        return 0
+    for audit in cached:
+        print(f"{audit['provider']}: {audit['status']} / {audit['risk_level'] or 'unknown'}")
+        if audit["summary"]:
+            print(f"  {audit['summary']}")
+    return 0
+
+
+def _outdated(args: argparse.Namespace) -> int:
+    context = scan_project(args.project)
+    lock = load_lockfile(context["root"])
+    _, registry = _registry(args.forge_home)
+    try:
+        rows = []
+        for pin in lock["skills"]:
+            if not isinstance(pin, dict) or not isinstance(pin.get("id"), str):
+                continue
+            skill = registry.get_skill(pin["id"])
+            if skill is not None and skill["content_hash"] and skill["content_hash"] != pin.get("hash"):
+                rows.append((pin, skill))
+    finally:
+        registry.close()
+    if not rows:
+        print("No cached updates are available for pinned Skills.")
+        return 0
+    for pin, skill in rows:
+        print(f"Update available: {pin['id']}")
+        print(f"  pinned: {pin.get('hash')} | cached latest: {skill['content_hash']}")
+        print("  Pin remains unchanged; inspect and explicitly pin to promote a new version.")
+    return 0
+
+
+def _diff(args: argparse.Namespace) -> int:
+    _, registry = _registry(args.forge_home)
+    try:
+        old_files = {str(file["path"]): str(file["contents"] or "") for file in registry.get_version_files(args.skill_id, args.old_hash)}
+        new_files = {str(file["path"]): str(file["contents"] or "") for file in registry.get_version_files(args.skill_id, args.new_hash)}
+    finally:
+        registry.close()
+    if not old_files or not new_files:
+        raise ValueError("Both requested cached versions must exist before diffing.")
+    paths = sorted(set(old_files) | set(new_files))
+    changed = [path for path in paths if old_files.get(path) != new_files.get(path)]
+    if not changed:
+        print("No content changes between the two cached versions.")
+        return 0
+    print(f"Changed files ({len(changed)}):")
+    for path in changed:
+        print(f"  - {path}")
+    for path in changed:
+        lines = list(
+            difflib.unified_diff(
+                old_files.get(path, "").splitlines(),
+                new_files.get(path, "").splitlines(),
+                fromfile=f"{args.old_hash}/{path}",
+                tofile=f"{args.new_hash}/{path}",
+                lineterm="",
+            )
+        )
+        if lines:
+            print("\n".join(lines[:80]))
     return 0
 
 
