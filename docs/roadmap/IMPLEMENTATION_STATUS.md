@@ -17,7 +17,7 @@ This is the implementation ledger for the phases in `FORGE_CODEX_IMPLEMENTATION_
 | 8+ — Explorer, graph, labs, learning | Not started | — | — | Build only as working local slices |
 | V2.1 — Planner foundation | Partial | `forge_planner` provider abstraction, offline stub provider, Anthropic provider, deterministic FTS retrieval, policy gate, `forge plan` with `plan.json`/`plan.md` artifacts | 41 tests (20 new), plus a lying-provider demo showing 3 nominations reduced to 1 admission | No historical evidence lookup, no exploration slot, no DAG metadata; the Anthropic path is unverified against the live API |
 | V2.1b — Planner benchmark | Complete (fixture-tested) | `forge_benchmark` harness, 26-Skill fixture catalog, 12 graded scenarios, 3 variants, 6 adversarial policy probes, retrieval-ceiling metric, `forge benchmark` with committed artifacts | 60 tests; 6/6 probes pass; both deterministic variants reproduce exactly; verified on Python 3.12.10 with identical numbers | Measured ranking gap is 0.00; three open defects recorded (F1 unreachable audit block, F2 no retrieval stemming, F3 silent role substitution); variant C never ran |
-| V2.1c — OpenAI provider + provider tests | Complete (offline-tested) | `OpenAIProvider` on Chat Completions with `OPENAI_BASE_URL`/`OPENAI_MODEL` overrides, shared `post_json` helper with a `_post` seam, benchmark survives a mid-run provider failure, auth test environment isolation | 76 tests (16 new); request shape, error translation, and parsing covered without a key | No live API call has ever been made by either network provider; `max_completion_tokens` and `response_format` are unverified against a real endpoint |
+| V2.1c — OpenAI provider + provider tests | Complete (live-verified) | `OpenAIProvider` on Chat Completions with `OPENAI_BASE_URL`/`OPENAI_MODEL` overrides, shared `post_json` helper with a `_post` seam, benchmark survives a mid-run provider failure, auth test environment isolation | 76 tests (16 new); benchmark variant C ran end to end against `gpt-5.6-luna`, confirming `max_completion_tokens` and `response_format` are accepted | The Anthropic path is still unverified against a live endpoint; variant C has one run on one model with no variance measurement |
 
 ## Phase 0–3 details
 
@@ -188,39 +188,54 @@ and it is additive.
 
 ### Results
 
-| Variant | Role recall | Retrieval ceiling | Ranking gap | Irrelevant rate | Passed |
-| --- | ---: | ---: | ---: | ---: | ---: |
-| A — retrieval-only | 0.95 | 0.95 | 0.00 | 0.126 | 7 / 12 |
-| B — stub lexical | 0.95 | 0.95 | 0.00 | 0.121 | 8 / 12 |
-| C — LLM provider | — | — | — | — | `skipped_external_provider` |
+| Variant | Role recall | Retrieval ceiling | Ranking gap | Irrelevant rate | Mean admitted | Passed |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| A — retrieval-only | 0.95 | 0.95 | 0.00 | 0.126 | 3.92 | 7 / 12 |
+| B — stub lexical | 0.95 | 0.95 | 0.00 | 0.121 | 3.75 | 8 / 12 |
+| C — LLM `gpt-5.6-luna` | 0.95 | 0.95 | 0.00 | 0.000 | 1.58 | 11 / 12 |
 
 Policy probes: 6 / 6 pass. Determinism: both deterministic variants reproduce exactly.
-Explanation coverage: 1.00.
+Explanation coverage: 1.00. Verified on Python 3.12.10.
 
-### Open defects found by the benchmark
+Recall is flat and the ranking gap is zero everywhere: reranking does not find more of the
+right Skills. Precision is where it matters: the LLM variant eliminated irrelevant selections
+entirely and cut selection size by 60%. It also admitted zero Skills in the scenario where no
+correct Skill was available, which both offline variants filled with unrelated substitutes.
 
+### Open defects
+
+- **F6** — on the live 9,610-entry catalog, five of six LLM nominations were rejected for
+  having no cached hash. `forge plan` returns one Skill and a list of `forge inspect` homework.
+  Highest practical impact. The authored fixture is ~90% cached and never surfaced this.
+- **F7** — `scan_project` reports `stack: ['supabase']` and `domains: ['quant', 'payments']`
+  for this repository because those words appear in prose and fixtures. Three of eight live
+  retrieval queries were spent on domains the project does not have.
 - **F1** — the policy gate's audit hard block is unreachable from the shipped static auditor,
   which emits only `pass/low`, `warn/low`, `warn/medium`, and from external audit import,
-  which never writes to `skill_versions`. The strongest safety claim in ADR-006 is currently
-  dead code.
+  which never writes to `skill_versions`. Currently dead code.
 - **F2** — FTS has no stemming. `search("redesign")` returns 0 results while
-  `search("design")` returns 5. Retrieval, not ranking, is the binding constraint.
-- **F3** — when no admissible Skill covers a required role, Forge still returns a plan built
-  from adjacent roles without marking it as failing to address the goal.
+  `search("design")` returns 5. Caps recall for every variant.
+- **F3** — weak proposers substitute adjacent roles silently. Downgraded after the LLM variant
+  declined to substitute; the fix is a coverage marker, not a gate change.
+
+F6 and F7 were found by running Forge on Forge against the real catalog. The 12-scenario
+fixture scored 6/6 on policy probes and surfaced neither.
 
 ### Recommendation
 
-**FIX V2.1 FIRST.** A ranking gap of 0.00 means V2.2's historical evidence and exploration
-would optimize a stage that currently has nothing to recover. See
-[the benchmark findings](PLANNER_BENCHMARK.md) for the evidence and the suggested order.
+**FIX V2.1 FIRST**, with revised reasoning. The earlier argument — "ranking gap is 0.00, so
+V2.2 has nothing to optimize" — is **withdrawn**: it was a recall-only conclusion, and the LLM
+variant showed a decisive precision effect. The recommendation stands on F6, F7, F2, and F1
+instead. See [the benchmark findings](PLANNER_BENCHMARK.md) for the evidence and order.
 
 ### Limitations
 
-- Fixture retrieval difficulty is authored, not sampled from the live catalog.
+- The fixture is ~90% cached; the real catalog is not. Treat all fixture numbers as an upper
+  bound — this gap hid F6 entirely.
 - Ground truth encodes one defensible opinion, written by the same author as the fixture.
-- Variant C never ran; no `ANTHROPIC_API_KEY` was available.
+- Variant C is one run, one model, 12 scenarios, no repeats. No variance or cost accounting.
+- The Anthropic provider still has no live verification.
 - The benchmark measures plan quality, not implementation quality.
-- Run on Python 3.10 with an uncommitted `datetime.UTC` shim; 3.12 verification outstanding.
 
 ## Commit ledger
 

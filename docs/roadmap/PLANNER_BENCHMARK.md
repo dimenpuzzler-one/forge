@@ -21,13 +21,15 @@ ranking alone.
 | B — stub lexical | goal-term overlap | what a trivial reranker adds |
 | C — LLM provider | semantic | what a real reranker adds |
 
-Variant C is implemented and wired for both `anthropic` and `openai`. It did not run: no API
-key is configured, and the harness recorded `skipped_external_provider` with the provider's
-own error text rather than substituting a stand-in. If a network provider fails partway
-through a run, that variant is dropped whole and recorded as `external_provider_failed`; the
-offline results survive, because a partially completed variant is not comparable.
+Variant C is implemented for both `anthropic` and `openai` and **ran successfully** against
+`gpt-5.6-luna` via the OpenAI Chat Completions path. The unverified request parameters
+(`max_completion_tokens`, `response_format`) were accepted by the live endpoint.
 
-To run it:
+If a network provider fails partway through a run, that variant is dropped whole and recorded
+as `external_provider_failed`; the offline results survive, because a partially completed
+variant is not comparable.
+
+To reproduce:
 
 ```powershell
 $env:OPENAI_API_KEY = "sk-..."
@@ -38,22 +40,50 @@ Ground truth is graded, not exact-match. Each scenario declares `requiredRoles`,
 `acceptableRoles`, `irrelevantRoles`, and `forbiddenSkills`, because more than one
 defensible Skill team exists for most goals.
 
-## Headline metric: the ranking gap
+## Results
 
 The benchmark computes a **retrieval ceiling** — the best role recall any reranker could
 have achieved given what retrieval actually returned — and a **ranking gap** of ceiling
 minus achieved recall.
 
-| Variant | Role recall | Retrieval ceiling | Ranking gap | Irrelevant rate | Scenarios passed |
-| --- | ---: | ---: | ---: | ---: | ---: |
-| A — retrieval-only | 0.95 | 0.95 | **0.00** | 0.126 | 7 / 12 |
-| B — stub lexical | 0.95 | 0.95 | **0.00** | 0.121 | 8 / 12 |
-| C — LLM provider | — | — | — | — | `skipped_external_provider` |
+| Variant | Role recall | Retrieval ceiling | Ranking gap | Irrelevant rate | Mean admitted | Scenarios passed |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| A — retrieval-only | 0.95 | 0.95 | 0.00 | 0.126 | 3.92 | 7 / 12 |
+| B — stub lexical | 0.95 | 0.95 | 0.00 | 0.121 | 3.75 | 8 / 12 |
+| C — LLM (`gpt-5.6-luna`) | 0.95 | 0.95 | 0.00 | **0.000** | **1.58** | **11 / 12** |
 
-A ranking gap of exactly zero across both variants means every recall shortfall was caused
-by retrieval, not by ranking. At this fixture size, **reranking recovered nothing that
-retrieval had not already surfaced**, and the two variants differ by 0.5 percentage points
-on the irrelevant-selection rate, which is one Skill in one scenario. That is not a signal.
+Read the two halves of that table separately, because they say opposite things.
+
+**Recall is flat at 0.95 across all three variants, and the ranking gap is 0.00 everywhere.**
+Every recall shortfall was caused by retrieval, not by ranking. A semantic reranker recovered
+nothing that retrieval had not already surfaced. Retrieval is the ceiling, and no provider
+can raise it.
+
+**Precision is where the reranker is decisive.** The LLM variant drove the irrelevant
+selection rate from ~0.12 to exactly 0.00, cut the mean selection size from 3.9 Skills to
+1.6, and passed 11 of 12 scenarios against 7 and 8. Its single failure is S01, and the
+harness attributes it correctly: *"retrieval never surfaced an admissible Skill for
+visual-design — this is a retrieval failure, not a ranking failure."*
+
+### Correction to the earlier conclusion
+
+An earlier version of this document concluded from the 0.00 ranking gap that "reranking
+recovered nothing" and therefore had no value. **That was wrong**, and the error is worth
+recording because it is the kind this project is supposed to catch.
+
+The ranking gap is a recall-only metric. The irrelevant-selection rate was measured from the
+start, but the GO/FIX recommendation was hung on the recall gap alone, so a large precision
+effect was reported in a side column and omitted from the headline. Reranking does not find
+more of the right Skills; it removes the wrong ones, decisively. Both statements are true and
+only one of them was in the conclusion.
+
+### The LLM variant also fixed F3 on its own
+
+Scenario S12 is the case where the only role-correct Skill is uncached. Variants A and B both
+returned a plan built from three adjacent, unrelated Skills. **The LLM variant admitted
+zero.** So the silent-substitution behaviour recorded as F3 is a property of weak proposers,
+not of the gate or the plan schema. It still deserves an explicit coverage marker in the plan
+artifact, but it is no longer evidence of a structural defect.
 
 ## Findings
 
@@ -89,7 +119,11 @@ A user phrasing a goal naturally gets a materially worse plan, and no provider c
 it, because the candidate never reaches the provider. Vol.2 §8 anticipates hybrid retrieval;
 this quantifies why it is not optional.
 
-### F3 — Forge silently substitutes adjacent Skills when the right one is unavailable
+### F3 — Weak proposers silently substitute adjacent Skills when the right one is unavailable
+
+*Downgraded after the LLM variant ran: the LLM proposer admitted zero Skills in this case.
+This is a proposer-quality issue, not a structural one. The recommended fix is now an
+explicit coverage marker in the plan artifact rather than a change to the gate.*
 
 Scenario S12 asks for backup retention. The only role-correct Skill is deliberately
 uncached, so the gate correctly rejects it with an actionable message. Forge then returns a
@@ -113,6 +147,58 @@ scenario *worse*, not better.
 Cause: `derive_queries` ORs its tokens, so a Skill matching any single token enters the
 candidate set, and neither variant has a relevance threshold — both take a fixed top-N.
 
+### F6 — In the real catalog, the cached-hash rule starves the planner
+
+The fixture is ~90% cached, so it hides the constraint that dominates real use. A live run
+against the 9,610-entry skills.sh catalog:
+
+```text
+forge plan "landing page conversion redesign" --provider openai --model gpt-5.6-luna
+
+Retrieved candidates: 60
+Policy gate: nominated=6, admitted=1, rejected=5
+  x autonnel/autonnel-skills/landing-page-conversion-audit  -> detail not cached
+  x kostja94/marketing-skills/conversion-optimization       -> detail not cached
+  x onewave-ai/claude-skills/landing-page-copywriter        -> detail not cached
+  x skills-101/superpowers/landing-page-design              -> detail not cached
+  x leonxlnx/taste-skill/redesign-existing-projects         -> detail not cached
+```
+
+Five of six nominations died on the cached-hash rule. The rule itself is correct — ADR-006
+depends on it — but its practical effect is that `forge plan` degrades into a list of Skills
+the user must `forge inspect` by hand before planning again. The provider did its job well
+and the output is still nearly unusable.
+
+`forge inspect` is already an on-demand fetch, so the planner could resolve nominated
+candidates lazily behind an explicit flag (`--fetch-missing`), keeping the immutability
+guarantee while removing the manual round trip. That is the highest-impact V2.1 fix; it is
+worth more than anything in V2.2.
+
+This finding also indicts the fixture: authored catalogs do not reproduce the cache
+distribution of a real registry, and this benchmark scored 6/6 on policy probes while
+completely missing the constraint that matters most in practice.
+
+### F7 — The scanner reads document mentions as project facts
+
+The same live run derived these retrieval queries inside the Forge repository itself:
+
+```text
+landing, page, conversion, redesign, supabase, quant, payments, ai
+```
+
+Forge does not use Supabase and is not a payments or quant project. `scan_project` reported
+`stack: ['supabase']` and `domains: ['quant', 'payments', 'ai', 'saas']` because those words
+appear in prose and fixtures — `FORGE_CODEX_IMPLEMENTATION_BRIEF.md`, the development log,
+`forge-development-plan-vol2.md`, and the benchmark fixture files.
+
+Three of eight retrieval queries were therefore spent on unrelated domains, and the candidate
+list hit its 60-item ceiling partly with noise. Adding the benchmark fixtures made this worse,
+but the cause predates them: the scanner does not distinguish "this project uses X" from
+"this project's documentation mentions X".
+
+This is a recursive-dogfooding find. It surfaced only because Forge was pointed at Forge, and
+it silently degrades every plan for any documentation-heavy repository.
+
 ### F5 — What did hold
 
 All six adversarial probes passed, and both deterministic variants reproduced exactly across
@@ -132,36 +218,61 @@ Skill carried a reason.
 
 ## Recommendation: FIX V2.1 FIRST
 
-Evidence:
+The recommendation is unchanged from the pre-variant-C draft, but **its reasoning is
+substantially different**, and one of the four original arguments has been withdrawn.
 
-1. **Ranking gap is 0.00.** V2.2 adds historical evidence and exploration, both of which
-   operate on the reranking stage. The benchmark shows that stage currently has nothing to
-   recover. Building V2.2 now optimizes a component that is not the bottleneck.
-2. **F2 caps the whole pipeline.** Recall cannot exceed the retrieval ceiling. Historical
-   evidence about a Skill is worthless if the goal phrasing never retrieves that Skill.
-3. **F1 is a safety correctness gap**, and Vol.2 §26 explicitly requires that Forge not
-   weaken its own trust boundaries. Shipping more planning capability on top of an
-   unreachable block branch inverts that principle.
-4. **F3 will compound.** V2.2 exploration adds more Skills to a selection. Adding
-   exploration to a planner that already substitutes silently makes the plan harder to
-   audit, not easier.
+### Withdrawn
 
-Suggested order before V2.2:
+> ~~Ranking gap is 0.00, so V2.2 would optimize a stage with nothing to recover.~~
 
-1. Make the audit hard block reachable — propagate external audit results into
-   `skill_versions`, or move the gate to read `security_audits` directly. Add a test that
-   fails if the block branch becomes unreachable again.
-2. Improve retrieval: stemming or prefix matching, plus a relevance floor so a single weak
-   token match does not admit a candidate. Re-run the benchmark and confirm the ceiling rises.
-3. Mark coverage explicitly in the plan artifact: when no admitted Skill addresses a
-   decomposed role, say so in `plan.md` rather than leaving the reader to infer it.
-4. Set `OPENAI_API_KEY` (or `ANTHROPIC_API_KEY`) and run variant C. Until then, whether
-   semantic reranking beats lexical retrieval is genuinely unknown — the harness is ready, the
-   measurement is not. This is also the only way to verify that either network provider's
-   request shape is accepted by a real endpoint.
+The LLM variant took the irrelevant-selection rate to 0.00 and cut selection size by 60%.
+The reranking stage demonstrably does real work; it just does it on precision rather than
+recall. V2.2's historical evidence attaches to exactly that stage, so it now has somewhere
+useful to attach.
 
-Reconsider GO V2.2 once the ranking gap is non-zero. A non-zero gap is the evidence that a
-better reranker has something to recover, which is precisely what V2.2 is designed to supply.
+### Still standing
+
+1. **F6 makes the planner impractical on the real catalog.** Five of six nominations died on
+   the cached-hash rule in a live run. A user gets one Skill and a homework list. No amount of
+   V2.2 intelligence improves a pipeline whose output is mostly "go run `forge inspect` five
+   times".
+2. **F2 caps recall for every variant.** All three sit at 0.95 with a 0.00 gap. Historical
+   evidence about a Skill is worthless if the goal phrasing never retrieves it, and
+   `search("redesign")` returning 0 results is not an exotic edge case.
+3. **F7 poisons the input to everything downstream.** Three of eight live queries were spent
+   on domains the project does not have. Every later stage inherits that error.
+4. **F1 remains a safety correctness gap.** Vol.2 §26 requires that Forge not weaken its own
+   trust boundaries; shipping more capability on top of an unreachable block branch inverts
+   that.
+
+### Suggested order before V2.2
+
+1. **F6 — lazy detail fetch for nominated candidates** behind an explicit flag. Highest
+   practical impact by a wide margin. Preserves immutability; removes the manual round trip.
+2. **F7 — separate "uses X" from "mentions X"** in the scanner. Weight code, manifests, and
+   lockfiles above prose, and exclude `tests/fixtures/` and `artifacts/` from signal
+   extraction.
+3. **F1 — make the audit hard block reachable.** Propagate external audit results into
+   `skill_versions`, or have the gate read `security_audits` directly. Add a test that fails
+   if the branch becomes unreachable again.
+4. **F2 — retrieval stemming and a relevance floor.** Re-run and confirm the ceiling rises.
+5. **F3 — an explicit coverage marker** in `plan.md` when no admitted Skill addresses a
+   decomposed role.
+
+Then reconsider GO V2.2. The precision result is genuine evidence that the reranking stage is
+worth investing in — but only once its inputs and outputs are not being wasted.
+
+### What changed the analysis
+
+Two things, and neither came from the fixture:
+
+- Running variant C revealed that the headline metric was measuring the wrong half of the
+  problem.
+- Running `forge plan` against the real catalog, inside the Forge repository itself, exposed
+  F6 and F7 — the two defects with the largest practical impact. The 12-scenario fixture
+  scored 6/6 on policy probes and did not surface either one.
+
+A benchmark that only runs on authored fixtures will keep missing this class of defect.
 
 ## Limits of this benchmark
 
@@ -169,15 +280,17 @@ better reranker has something to recover, which is precisely what V2.2 is design
   Retrieval difficulty is therefore synthetic and probably easier than production.
 - Ground truth role labels were written by the same author as the fixture. They encode one
   defensible opinion, not a consensus.
-- Variant C never ran. Every claim about LLM reranking remains unmeasured.
+- **The fixture does not reproduce the real cache distribution.** It is ~90% cached; the live
+  catalog is mostly uncached. That gap hid F6 entirely, which is the defect with the largest
+  practical impact. Treat every fixture number as an upper bound.
+- Variant C ran once, on one model (`gpt-5.6-luna`, OpenAI's lowest tier), on 12 scenarios,
+  with no repeat runs. The precision result is a strong single observation, not a stable
+  measurement — no variance, no model comparison, no cost accounting.
 - The benchmark measures plan quality, not implementation quality. Vol.2 §38's real
   question — does a Forge plan produce better code than a plain prompt — requires agent
   execution and is out of scope for V2.1.
-- Neither network provider has ever made a live API call. Their request shape, error
-  translation, and response parsing are covered by tests that replace the `_post` seam, which
-  proves the code is internally consistent, not that a real endpoint accepts it. In
-  particular `max_completion_tokens` and `response_format` are unverified; an HTTP 400 from
-  either carries a hint pointing at `json_mode=False` and `OPENAI_BASE_URL`.
+- The Anthropic provider still has no live verification. Only the OpenAI path has been
+  exercised end to end against a real endpoint.
 
 ### Runtime verification
 

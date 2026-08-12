@@ -19,10 +19,12 @@ what risk level. A model's selection is a proposal; admission is a separate dete
 decision that the model cannot influence.
 
 **Current honest status.** The safety boundary is demonstrated by tests — six adversarial
-probes covering every ADR-006 invariant pass. The planning *quality* is measured and currently
-modest: the benchmark's ranking gap is 0.00, meaning reranking recovers nothing that retrieval
-had not already surfaced, and three defects are open. Forge is a policy-bounded planner
-foundation, not a system that has been shown to pick better Skills than a good prompt.
+probes covering every ADR-006 invariant pass. On planning quality the benchmark shows a real
+but one-sided effect: a semantic reranker does not find more of the right Skills, but it
+removes nearly all the wrong ones. Retrieval is the binding constraint, and on the real
+catalog most nominated Skills are rejected for having no cached version, which makes the
+planner impractical today. Forge is a policy-bounded planner foundation, not a system that has
+been shown to produce better software than a good prompt.
 
 ## Safety and storage boundaries
 
@@ -265,20 +267,38 @@ invariants and all six pass:
 Both deterministic variants reproduce exactly across consecutive runs, and explanation
 coverage is 1.00 — every admitted, excluded, and rejected Skill carries a reason.
 
+#### What the measurements say
+
+| Variant | Role recall | Ranking gap | Irrelevant rate | Mean admitted | Passed |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| A — retrieval-only | 0.95 | 0.00 | 0.126 | 3.92 | 7 / 12 |
+| B — stub lexical | 0.95 | 0.00 | 0.121 | 3.75 | 8 / 12 |
+| C — LLM (`gpt-5.6-luna`) | 0.95 | 0.00 | **0.000** | **1.58** | **11 / 12** |
+
+The two halves say opposite things, and both are true.
+
+**Reranking does not improve recall.** All three variants sit at 0.95 with a ranking gap of
+0.00 — every shortfall is caused by retrieval, and no provider can raise that ceiling.
+
+**Reranking is decisive for precision.** The LLM variant took the irrelevant-selection rate to
+zero and cut the selection from ~3.9 Skills to 1.6. It also declined to select anything in the
+scenario where no correct Skill was available, where both offline variants substituted three
+unrelated ones.
+
 #### What it does not prove
 
-Measured on the current fixture, the **ranking gap is 0.00**: role recall exactly equals the
-retrieval ceiling, meaning reranking recovered nothing that retrieval had not already
-surfaced. Retrieval, not ranking, is the binding constraint. The LLM variant has not been run.
+Variant C ran once, on one model, on 12 authored scenarios, with no repeat runs — a strong
+single observation, not a stable measurement. Whether a Forge plan produces better *code* than
+a plain prompt is unmeasured; that needs agent execution, which V2.1 does not perform.
 
-Also unmeasured: whether a Forge plan produces better code than a plain prompt (needs agent
-execution, which V2.1 does not perform), and whether historical evidence or adaptive
-exploration help (V2.2 owns both).
+More importantly, **the fixture is ~90% cached and the real catalog is not.** A live run
+against 9,610 Skills had five of six nominations rejected for having no cached hash, which the
+fixture never surfaced. Treat the numbers above as an upper bound.
 
 Forge is a **policy-bounded planner foundation**. The safety boundary is demonstrated by
-tests. The selection quality is measured and currently modest, with three open defects
-recorded in [the benchmark findings](docs/roadmap/PLANNER_BENCHMARK.md) — an unreachable audit
-block, no retrieval stemming, and silent role substitution — alongside a FIX-V2.1-FIRST
+tests. Five open defects are recorded in
+[the benchmark findings](docs/roadmap/PLANNER_BENCHMARK.md), the two most damaging of which
+were found by running Forge on Forge rather than by the fixture, alongside a FIX-V2.1-FIRST
 recommendation.
 
 ## Development
@@ -313,15 +333,23 @@ a key. What that cannot prove is that a live endpoint accepts the request — ru
 Current milestone: **Vol.2 V2.1 planner foundation plus its benchmark.** Phases 0–7 are
 implemented and fixture-tested; `forge plan` and `forge benchmark` are the newest slices.
 
-The benchmark recommendation is **FIX V2.1 FIRST**, not GO V2.2, and the evidence is a ranking
-gap of 0.00 — V2.2's historical evidence and adaptive exploration both operate on the
-reranking stage, which currently has nothing to recover. The suggested order before V2.2:
+The benchmark recommendation is **FIX V2.1 FIRST**, not GO V2.2. The suggested order, highest
+practical impact first:
 
-1. Make the audit hard block reachable (it is currently dead code — see finding F1).
-2. Improve retrieval: stemming and a relevance floor. `search("redesign")` returns 0 results
-   while `search("design")` returns 5, and no reranker can repair that.
-3. Mark role coverage explicitly in the plan artifact instead of substituting silently.
-4. Run benchmark variant C with a real key; until then LLM reranking is unmeasured.
+1. **Fetch detail lazily for nominated candidates** behind an explicit flag. On the live
+   catalog five of six nominations are rejected for having no cached hash, so `forge plan`
+   currently returns one Skill and a list of `forge inspect` homework (F6).
+2. **Separate "uses X" from "mentions X" in the scanner.** Run inside this repository, Forge
+   reported `stack: ['supabase']` and `domains: ['quant', 'payments']` because those words
+   appear in prose and fixtures, wasting three of eight retrieval queries (F7).
+3. **Make the audit hard block reachable** — it is currently dead code (F1).
+4. **Add retrieval stemming and a relevance floor.** `search("redesign")` returns 0 results
+   while `search("design")` returns 5, and no reranker can repair that (F2).
+5. **Mark role coverage explicitly** in the plan artifact instead of substituting silently (F3).
+
+Note that the reranking stage itself is *not* on this list: the LLM variant took the
+irrelevant-selection rate to zero, so V2.2's historical evidence has a real place to attach —
+once its inputs and outputs stop being wasted.
 
 Later phases add historical evidence, exploration budgets, composition DAGs, automatic
 finalization, curated knowledge publishing, and specialized agent adapters. Those are design
