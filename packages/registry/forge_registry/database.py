@@ -14,7 +14,7 @@ from forge_core.errors import ValidationError
 from forge_core.models import SkillMetadata
 
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 MAX_SKILL_FILE_BYTES = 1_048_576
 MAX_SKILL_TOTAL_BYTES = 5 * 1_048_576
 SCRIPT_SUFFIXES = {".bat", ".cmd", ".exe", ".ps1", ".py", ".sh", ".zsh"}
@@ -209,6 +209,51 @@ class Registry:
                 """
             )
             self.connection.execute("PRAGMA user_version = 3")
+            self.connection.commit()
+            current = 3
+        if current < 4:
+            # Vol.2 section 16, minimal subset. These tables exist so that historical evidence
+            # has a producer before V2.2 gains a consumer; without them the planner would query
+            # a table nothing ever writes to.
+            self.connection.executescript(
+                """
+                CREATE TABLE tasks (
+                    id INTEGER PRIMARY KEY,
+                    plan_id TEXT NOT NULL UNIQUE,
+                    project TEXT NOT NULL DEFAULT '',
+                    goal TEXT NOT NULL,
+                    task_type TEXT NOT NULL DEFAULT '',
+                    risk TEXT NOT NULL DEFAULT 'medium',
+                    provider TEXT NOT NULL DEFAULT '',
+                    created_at TEXT NOT NULL
+                );
+
+                CREATE TABLE task_skills (
+                    task_id INTEGER NOT NULL REFERENCES tasks(id),
+                    skill_id TEXT NOT NULL,
+                    content_hash TEXT NOT NULL DEFAULT '',
+                    role TEXT NOT NULL DEFAULT 'general',
+                    selected_reason TEXT NOT NULL DEFAULT '',
+                    exploration INTEGER NOT NULL DEFAULT 0,
+                    PRIMARY KEY(task_id, skill_id)
+                );
+
+                CREATE TABLE skill_evaluations (
+                    id INTEGER PRIMARY KEY,
+                    task_id INTEGER NOT NULL REFERENCES tasks(id),
+                    skill_id TEXT NOT NULL,
+                    contribution TEXT NOT NULL,
+                    evidence_class TEXT NOT NULL,
+                    note TEXT NOT NULL DEFAULT '',
+                    recorded_at TEXT NOT NULL,
+                    UNIQUE(task_id, skill_id, evidence_class)
+                );
+
+                CREATE INDEX idx_task_skills_skill ON task_skills(skill_id);
+                CREATE INDEX idx_skill_evaluations_skill ON skill_evaluations(skill_id);
+                """
+            )
+            self.connection.execute("PRAGMA user_version = 4")
             self.connection.commit()
 
     @contextmanager
@@ -740,6 +785,134 @@ class Registry:
             "UPDATE skill_versions SET security_status = ?, risk_level = ? WHERE id = ?",
             (status, risk, version_id),
         )
+
+
+    # ------------------------------------------------------------------ evidence (schema 4)
+
+    def record_task(
+        self,
+        *,
+        plan_id: str,
+        goal: str,
+        project: str,
+        task_type: str,
+        risk: str,
+        provider: str,
+        skills: list[dict[str, Any]],
+    ) -> int:
+        """Record that a plan was produced. This is provenance, not a claim of success."""
+        with self.transaction():
+            cursor = self.connection.execute(
+                """
+                INSERT INTO tasks(plan_id, project, goal, task_type, risk, provider, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(plan_id) DO NOTHING
+                """,
+                (plan_id, project, goal, task_type, risk, provider, utc_now()),
+            )
+            if cursor.rowcount == 0:
+                row = self.connection.execute("SELECT id FROM tasks WHERE plan_id = ?", (plan_id,)).fetchone()
+                return int(row["id"])
+            task_id = int(cursor.lastrowid)
+            for skill in skills:
+                self.connection.execute(
+                    """
+                    INSERT INTO task_skills(task_id, skill_id, content_hash, role, selected_reason, exploration)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(task_id, skill_id) DO NOTHING
+                    """,
+                    (
+                        task_id,
+                        str(skill["id"]),
+                        str(skill.get("hash") or ""),
+                        str(skill.get("role") or "general"),
+                        str(skill.get("reason") or ""),
+                        int(bool(skill.get("exploration"))),
+                    ),
+                )
+        return task_id
+
+    def get_task(self, plan_id: str) -> sqlite3.Row | None:
+        return self.connection.execute("SELECT * FROM tasks WHERE plan_id = ?", (plan_id,)).fetchone()
+
+    def latest_task(self) -> sqlite3.Row | None:
+        return self.connection.execute("SELECT * FROM tasks ORDER BY id DESC LIMIT 1").fetchone()
+
+    def get_task_skills(self, task_id: int) -> list[sqlite3.Row]:
+        return list(
+            self.connection.execute(
+                "SELECT * FROM task_skills WHERE task_id = ? ORDER BY skill_id", (task_id,)
+            )
+        )
+
+    def record_evaluation(
+        self, *, task_id: int, skill_id: str, contribution: str, evidence_class: str, note: str = ""
+    ) -> None:
+        selected = self.connection.execute(
+            "SELECT 1 FROM task_skills WHERE task_id = ? AND skill_id = ?", (task_id, skill_id)
+        ).fetchone()
+        if selected is None:
+            raise ValidationError(
+                f"{skill_id} was not part of that plan, so its contribution to it cannot be recorded."
+            )
+        self.connection.execute(
+            """
+            INSERT INTO skill_evaluations(task_id, skill_id, contribution, evidence_class, note, recorded_at)
+            VALUES (?, ?, ?, ?, ?, ?)
+            ON CONFLICT(task_id, skill_id, evidence_class) DO UPDATE SET
+                contribution = excluded.contribution, note = excluded.note, recorded_at = excluded.recorded_at
+            """,
+            (task_id, skill_id, contribution, evidence_class, note, utc_now()),
+        )
+        self.connection.commit()
+
+    def skill_history(self, skill_id: str) -> dict[str, Any]:
+        """Aggregate what is actually recorded about one Skill. Absence is reported as absence."""
+        used = self.connection.execute(
+            "SELECT COUNT(*) AS n FROM task_skills WHERE skill_id = ?", (skill_id,)
+        ).fetchone()
+        contributions = list(
+            self.connection.execute(
+                """
+                SELECT contribution, evidence_class, COUNT(*) AS n
+                FROM skill_evaluations WHERE skill_id = ?
+                GROUP BY contribution, evidence_class
+                """,
+                (skill_id,),
+            )
+        )
+        roles = list(
+            self.connection.execute(
+                """
+                SELECT role, COUNT(*) AS n FROM task_skills WHERE skill_id = ?
+                GROUP BY role ORDER BY n DESC, role
+                """,
+                (skill_id,),
+            )
+        )
+        pairings = list(
+            self.connection.execute(
+                """
+                SELECT other.skill_id, COUNT(*) AS n
+                FROM task_skills AS mine
+                JOIN task_skills AS other ON other.task_id = mine.task_id AND other.skill_id != mine.skill_id
+                WHERE mine.skill_id = ?
+                GROUP BY other.skill_id ORDER BY n DESC, other.skill_id LIMIT 5
+                """,
+                (skill_id,),
+            )
+        )
+        return {
+            "skillId": skill_id,
+            "selectedInTasks": int(used["n"]) if used else 0,
+            "contributions": [
+                {"contribution": str(row["contribution"]), "evidenceClass": str(row["evidence_class"]), "count": int(row["n"])}
+                for row in contributions
+            ],
+            "roles": [{"role": str(row["role"]), "count": int(row["n"])} for row in roles],
+            "commonPairings": [{"skillId": str(row["skill_id"]), "count": int(row["n"])} for row in pairings],
+            "evaluated": bool(contributions),
+        }
 
 
 def _safe_snapshot_name(skill_id: str) -> str:

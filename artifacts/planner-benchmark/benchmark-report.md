@@ -1,6 +1,6 @@
 # Forge planner benchmark
 
-Generated: 2026-08-12T08:03:02.207383Z
+Generated: 2026-08-12T09:12:15.817310Z
 Milestone: Vol.2 V2.1 planner foundation
 
 This benchmark measures the V2.1 planner against an authored fixture catalog. It does not

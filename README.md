@@ -10,6 +10,7 @@ forge sync --source skills-sh --metadata-only
 forge search "postgres production"
 forge inspect <skill-id>
 forge plan "landing page conversion redesign"
+forge learn latest <skill-id> --contribution high
 forge benchmark
 ```
 
@@ -314,6 +315,51 @@ Coverage: INCOMPLETE — 1/2 roles covered.
 
 An incomplete plan is labelled as incomplete rather than left to read as a finished one.
 
+### Record what a Skill actually contributed
+
+```powershell
+forge plan "landing page conversion redesign"
+# ... review the plan, do the work, then judge it
+forge learn latest coreyhaines31/marketingskills/page-cro --contribution high --note "CTA hierarchy drove it"
+forge skills usage coreyhaines31/marketingskills/page-cro
+```
+
+`forge plan` records provenance automatically — which Skills were admitted, at which hash, in
+which role. That is *not* a claim that the plan worked. `forge learn` attaches your judgement
+of a Skill's contribution to a specific plan, and later plans surface it:
+
+```text
+- Past record: selected in 3 prior plan(s); human contribution high: 2, low: 1
+- Past record: selected in 3 prior plan(s); no contribution has ever been recorded for it
+```
+
+Three rules make this record worth trusting:
+
+- **Only human evidence can be written.** Forge does not execute agents, so it has nothing
+  observed to record, and an agent's opinion of its own work is refused outright. Recording it
+  would be the feedback loop where a model rates its own output highly and thereby selects the
+  same Skill next time.
+- **Selection is never endorsement.** A Skill chosen ten times with no recorded contribution
+  reports exactly that, rather than looking proven by repetition.
+- **History is shown, not injected.** Past evidence appears in `plan.json` and `plan.md` for a
+  human to weigh. It is deliberately not added to the provider prompt — that decision belongs
+  to V2.2, made with real data rather than assumed now.
+
+See [ADR-009](docs/decisions/ADR-009-evidence-is-recorded-before-it-is-consulted.md).
+
+#### Roles
+
+Evidence accumulates per role, so an unstable role vocabulary scatters it. The same goal
+produced six roles on one live run and seven on the next. Forge therefore publishes a canonical
+role vocabulary in the provider prompt — `positioning`, `copy`, `conversion`, `visual-design`,
+`component-architecture`, `responsive`, `accessibility`, `performance`, `testing`, `security`,
+`auth`, `payments`, and others.
+
+Anything outside the list is still accepted, recorded verbatim, and marked `custom:` so it
+stays out of aggregates until a human promotes it. Forge applies mechanical normalization only
+(case, separators) and keeps no synonym table: mapping `conversion-audit` onto `conversion`
+would assert an equivalence the provider never stated and would hide the drift.
+
 ### Measure the planner
 
 ```powershell
@@ -474,9 +520,26 @@ forge plan "landing page conversion redesign" --provider openai --model gpt-5.6-
   nominated=6  admitted=6  rejected=0      coverage 4/7 roles
 ```
 
-**V2.1 is closed.** Carried into V2.2, all found in that live run and none blocking: duplicate
-role assignment within one selection, no aggregate warning when every selected Skill is
-unlicensed, and role decomposition that varies between runs of the same goal.
+**V2.1 is closed.**
+
+### V2.2-prep: breaking the evidence cycle
+
+V2.2's first item is historical evidence lookup, but the components that *produce* that
+evidence come later in the roadmap. Building V2.2 in the stated order would mean querying a
+table nothing writes to. So the producer came first:
+
+| | What |
+| --- | --- |
+| Schema 4 | `tasks`, `task_skills`, `skill_evaluations` — the minimal subset of Vol.2 §16 |
+| `forge plan` | records provenance automatically; not a claim the plan worked |
+| `forge learn` | attaches a human contribution judgement to a specific plan |
+| `forge skills usage` | shows what is recorded, including when nothing is |
+| Role vocabulary | canonical list in the provider prompt; unlisted roles kept and marked `custom:` |
+
+Role decomposition instability — one of the three items carried out of V2.1 — is addressed by
+the vocabulary. The other two remain open: duplicate role assignment within one selection, and
+no aggregate warning when every selected Skill is unlicensed. Both belong with V2.2's
+composition DAG.
 
 Later phases add historical evidence, exploration budgets, composition DAGs, automatic
 finalization, curated knowledge publishing, and specialized agent adapters. Those are design

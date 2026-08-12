@@ -8,6 +8,7 @@ from dataclasses import dataclass, field
 from typing import Any, Protocol, runtime_checkable
 
 from forge_core.errors import ForgeError, ValidationError
+from forge_planner.roles import normalize_role, vocabulary_prompt_block
 
 # The planner sends candidate metadata only. Skill file contents are untrusted data and are
 # never forwarded to a provider during planning.
@@ -85,14 +86,17 @@ class PlanProvider(Protocol):
     def propose(self, request: PlanRequest) -> PlanProposal: ...
 
 
+# Assembled by concatenation rather than an f-string: the JSON schema below contains braces,
+# which an f-string would try to interpret as format fields.
 SYSTEM_PROMPT = """You are the planning stage of Forge, a procedural-knowledge toolkit.
 
 You receive a user goal, a project context, and a list of candidate Skills that a
 deterministic local registry already retrieved. Your job is semantic judgment only.
 
+""" + vocabulary_prompt_block() + """
+
 Rules you must follow:
-1. Decompose the goal into task roles (for example: positioning, copy, conversion,
-   visual-design, responsive, accessibility, testing, security-review).
+1. Decompose the goal into task roles drawn from the vocabulary above.
 2. Select Skills ONLY from the provided candidate list. Never invent a Skill id.
    Any id you emit that is not in the candidate list will be discarded.
 3. Give every selection a concrete reason tied to the goal, not to popularity.
@@ -150,7 +154,7 @@ def parse_proposal(payload: str) -> PlanProposal:
         selected.append(
             SkillProposal(
                 skill_id=skill_id.strip(),
-                role=_as_text(entry.get("role"), fallback="general"),
+                role=normalize_role(_as_text(entry.get("role"), fallback="general")).storage_key,
                 reason=_as_text(entry.get("reason"), fallback="No reason was provided by the provider."),
                 confidence=_as_confidence(entry.get("confidence")),
             )
@@ -172,7 +176,9 @@ def parse_proposal(payload: str) -> PlanProposal:
     return PlanProposal(
         task_type=_as_text_list(data.get("taskType")),
         risk=risk if risk in {"low", "medium", "high"} else "medium",
-        roles=_as_text_list(data.get("roles")),
+        roles=list(
+            dict.fromkeys(normalize_role(role).storage_key for role in _as_text_list(data.get("roles")))
+        ),
         selected=selected,
         excluded=excluded,
         verification_plan=_as_text_list(data.get("verificationPlan")),

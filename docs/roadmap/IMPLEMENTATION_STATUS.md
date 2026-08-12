@@ -17,6 +17,7 @@ This is the implementation ledger for the phases in `FORGE_CODEX_IMPLEMENTATION_
 | 8+ — Explorer, graph, labs, learning | Not started | — | — | Build only as working local slices |
 | V2.1 — Planner foundation | Partial | `forge_planner` provider abstraction, offline stub provider, Anthropic provider, deterministic FTS retrieval, policy gate, `forge plan` with `plan.json`/`plan.md` artifacts | 41 tests (20 new), plus a lying-provider demo showing 3 nominations reduced to 1 admission | No historical evidence lookup, no exploration slot, no DAG metadata; the Anthropic path is unverified against the live API |
 | V2.1b — Planner benchmark | Complete (fixture-tested) | `forge_benchmark` harness, 26-Skill fixture catalog, 12 graded scenarios, 3 variants, 6 adversarial policy probes, retrieval-ceiling metric, `forge benchmark` with committed artifacts | 60 tests; 6/6 probes pass; both deterministic variants reproduce exactly; verified on Python 3.12.10 with identical numbers | Measured ranking gap is 0.00; three open defects recorded (F1 unreachable audit block, F2 no retrieval stemming, F3 silent role substitution); variant C never ran |
+| V2.2-prep — Evidence loop + role vocabulary | Complete (fixture-tested) | Registry schema 4 (`tasks`, `task_skills`, `skill_evaluations`), automatic plan provenance, `forge learn`, `forge skills usage`, canonical role vocabulary with `custom:` overflow, real `historicalEvidence` in plan artifacts | 119 tests (19 new); plan → learn → next-plan loop verified end to end; schema migration additive and idempotent | Evidence only grows when a human runs `forge learn`; `observed` and `inferred` classes are reserved but have no producer; history is shown to humans, not injected into the provider prompt |
 | V2.1d — Real-catalog hardening | **Complete (live-verified)** | F7 evidence-weighted project signals (schema 2), F6 `--fetch-missing` lazy detail fetch with structured rejection codes, F1 external-audit escalation onto `skill_versions`, F2 affix stripping and relevance floor, F3 coverage marker | 100 tests (24 new); live `--fetch-missing` took a real plan from 1 admission to 6; variant C reached 12/12 with 0.000 irrelevant; 6/6 policy probes hold | Offline variants pay ~2 points of precision; duplicate role assignment, absent aggregate license warning, and unstable role decomposition remain open for V2.2 |
 | V2.1c — OpenAI provider + provider tests | Complete (live-verified) | `OpenAIProvider` on Chat Completions with `OPENAI_BASE_URL`/`OPENAI_MODEL` overrides, shared `post_json` helper with a `_post` seam, benchmark survives a mid-run provider failure, auth test environment isolation | 76 tests (16 new); benchmark variant C ran end to end against `gpt-5.6-luna`, confirming `max_completion_tokens` and `response_format` are accepted | The Anthropic path is still unverified against a live endpoint; variant C has one run on one model with no variance measurement |
 
@@ -341,6 +342,59 @@ forge plan --fetch-missing (live catalog)       1 admission -> 6
 - `forge recommend` inherits the stricter `stack`/`domains` and returns fewer results for
   documentation-heavy projects. Intended correction, not a regression.
 - The Anthropic provider has still never made a live call.
+
+## V2.2-prep details (evidence loop and role vocabulary)
+
+Vol.2 lists historical evidence lookup as V2.2's first item, but `finalize` (V2.4) and `learn`
+(V2.5) are what produce that evidence. Implementing V2.2 in the stated order would have meant
+querying a table nothing writes to, which `AGENTS.md` forbids. The producer was built first.
+
+### Schema 4
+
+`tasks`, `task_skills`, `skill_evaluations` — the minimal subset of Vol.2 §16. Additive and
+idempotent; verified by test. `forge plan` writes a task row and its admitted Skills
+automatically, which is provenance and not a success claim.
+
+### Evidence discipline
+
+- **`human` is the only writable evidence class.** `inferred` is refused with an explanation;
+  `observed` is reserved but has no producer because Forge does not execute agents. Reserving
+  both means adding them later needs no migration.
+- **Selection is never endorsement.** A Skill selected repeatedly with no recorded contribution
+  reports exactly that, in both `forge skills usage` and the plan artifact.
+- **History is shown, not injected.** The provider prompt does not receive a Skill's selection
+  history. Whether to inject it, behind an exploration budget, is a V2.2 decision that should
+  be made with real data — see Vol.2 §40 Risk C.
+- `contribution` is a four-value scale, not a number. Vol.2 §17 refuses to collapse relevance,
+  safety, implementation impact, and human preference into one score.
+
+### Role vocabulary
+
+Canonical roles are published in the provider system prompt. Unlisted roles are accepted,
+recorded verbatim, and marked `custom:` so they stay out of aggregates. Normalization is
+mechanical only (case, separators); there is no synonym table, because mapping
+`conversion-audit` onto `conversion` would assert an equivalence the provider never stated and
+would hide the drift that motivated this work.
+
+This closes the role-instability item carried out of V2.1.
+
+### Verification
+
+```text
+python -m unittest discover                     PASS (119 tests, 19 new)
+python -m compileall -q apps packages tests     PASS
+forge benchmark                                 PASS (6/6 probes, no regression)
+forge scan .                                    contamination still absent
+plan -> learn -> plan  (manual, end to end)     later plan surfaces the recorded verdict
+```
+
+### Carried into V2.2 proper
+
+- Duplicate role assignment within one selection — belongs with the composition DAG.
+- No aggregate warning when every selected Skill is unlicensed.
+- Whether historical evidence should reach the provider prompt, and behind what exploration
+  budget.
+- `observed` evidence has no producer until `finalize` exists.
 
 ## Commit ledger
 

@@ -8,6 +8,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from forge_planner.evidence import load_history
 from forge_planner.fetch import (
     DEFAULT_MAX_FETCH,
     DetailFetcher,
@@ -21,6 +22,7 @@ from forge_planner.provider import (
     PlanRequest,
     SkillCandidate,
 )
+from forge_planner.roles import display as role_display
 from forge_registry.database import Registry
 
 PLAN_SCHEMA_VERSION = 1
@@ -275,6 +277,15 @@ def create_plan(
     plan_id = _plan_id(goal)
     directory = plans_root / plan_id
     directory.mkdir(parents=True, exist_ok=True)
+
+    # Past evidence is shown, not fed to the provider. Injecting it into the prompt would let a
+    # Skill's own selection history argue for selecting it again, which is the feedback-loop
+    # corruption Vol.2 section 40 Risk C warns about. A human reads it and decides.
+    history = {
+        decision.skill_id: load_history(registry, decision.skill_id).as_plan_evidence()
+        for decision in gate.admitted
+    }
+
     document = _plan_document(
         plan_id=plan_id,
         goal=goal,
@@ -285,6 +296,25 @@ def create_plan(
         proposal=proposal,
         gate=gate,
         fetch_report=fetch_report,
+        history=history,
+    )
+    registry.record_task(
+        plan_id=plan_id,
+        goal=goal,
+        project=str(project_context.get("name") or ""),
+        task_type=",".join(proposal.task_type),
+        risk=gate.risk,
+        provider=getattr(provider, "name", "unknown"),
+        skills=[
+            {
+                "id": decision.skill_id,
+                "hash": decision.content_hash,
+                "role": decision.role,
+                "reason": decision.reason,
+                "exploration": False,
+            }
+            for decision in gate.admitted
+        ],
     )
     (directory / "plan.json").write_text(
         json.dumps(document, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
@@ -317,6 +347,7 @@ def _plan_document(
     proposal: PlanProposal,
     gate: GateResult,
     fetch_report: FetchReport,
+    history: dict[str, list[str]],
 ) -> dict[str, Any]:
     return {
         "schemaVersion": PLAN_SCHEMA_VERSION,
@@ -357,7 +388,7 @@ def _plan_document(
                 "requiresReview": decision.requires_review,
                 "reviewNotes": decision.review_notes,
                 "exploration": False,
-                "historicalEvidence": [],
+                "historicalEvidence": history.get(decision.skill_id, []),
             }
             for decision in gate.admitted
         ],
@@ -476,13 +507,17 @@ def render_plan_markdown(document: dict[str, Any]) -> str:
         lines += [
             f"### `{skill['id']}`",
             "",
-            f"- Role: {skill['role']}",
+            f"- Role: {role_display(skill['role'])}",
             f"- Source: {skill['source']}",
             f"- Pinned hash: `{skill['hash']}`",
             f"- Static audit: {skill['securityStatus']} / {skill['riskLevel']}",
             f"- Provider confidence: {skill['confidence']:.2f} (inferred, not evidence)",
             f"- Reason: {skill['reason']}",
         ]
+        if skill["historicalEvidence"]:
+            lines.append(f"- Past record: {'; '.join(skill['historicalEvidence'])}")
+        else:
+            lines.append("- Past record: none. This Skill has never been selected in a recorded plan.")
         for note in skill["reviewNotes"]:
             lines.append(f"- Caution: {note}")
         lines.append("")

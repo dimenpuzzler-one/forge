@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-08-12T08:03:02.207383Z",
+  "generatedAt": "2026-08-12T09:12:15.817310Z",
   "milestone": "Vol.2 V2.1 planner foundation",
   "runtime": {
     "sandboxRuntime": "Python 3.10.12 + temporary compatibility shim",

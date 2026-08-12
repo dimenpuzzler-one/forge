@@ -13,7 +13,9 @@ from forge_core.paths import database_path, ensure_forge_home, forge_home
 from forge_core.auth import resolve_skills_sh_auth
 from forge_benchmark.runner import build_summary, resolve_external_provider, run_benchmark, write_artifacts
 from forge_compose.service import add_skill_to_composition, analyze_composition, manifest
+from forge_planner.evidence import CONTRIBUTIONS, load_history, record_contribution, resolve_plan_id
 from forge_planner.provider import resolve_provider
+from forge_planner.roles import display as role_display
 from forge_planner.service import create_plan
 from forge_project.scanner import scan_project, write_project_context
 from forge_project.lockfile import load_lockfile, pin_skill
@@ -123,6 +125,19 @@ def build_parser() -> argparse.ArgumentParser:
         "--fetch-budget", type=int, default=8, help="Maximum Skills to fetch in one plan (1-25; default: 8)."
     )
 
+    learn = subcommands.add_parser(
+        "learn", help="Record what a Skill actually contributed to a plan you have reviewed."
+    )
+    learn.add_argument("plan_id", help="A plan id, or `latest` for the most recently recorded plan.")
+    learn.add_argument("skill_id")
+    learn.add_argument("--contribution", required=True, choices=list(CONTRIBUTIONS))
+    learn.add_argument("--note", default="", help="Optional free text explaining the judgement.")
+
+    skills = subcommands.add_parser("skills", help="Inspect accumulated evidence about Skills.")
+    skills_commands = skills.add_subparsers(dest="skills_command", required=True)
+    skills_usage = skills_commands.add_parser("usage", help="Show what is recorded about one Skill.")
+    skills_usage.add_argument("skill_id")
+
     benchmark = subcommands.add_parser(
         "benchmark", help="Measure planner selection quality and policy correctness against fixtures."
     )
@@ -180,6 +195,10 @@ def main(argv: list[str] | None = None) -> int:
             return _compose(args)
         if args.command == "plan":
             return _plan(args)
+        if args.command == "learn":
+            return _learn(args)
+        if args.command == "skills":
+            return _skills(args)
         if args.command == "benchmark":
             return _benchmark(args)
         if args.command == "bundle":
@@ -641,6 +660,50 @@ def _plan(args: argparse.Namespace) -> int:
             print(f"  ! {item}")
     print(f"\nPlan artifacts: {result.directory}")
     print("Skill selection reasoning is a model judgment, not verified evidence. Review before executing.")
+    return 0
+
+
+def _learn(args: argparse.Namespace) -> int:
+    _, registry = _registry(args.forge_home)
+    try:
+        plan_id = resolve_plan_id(registry, args.plan_id)
+        record_contribution(
+            registry,
+            plan_id=plan_id,
+            skill_id=args.skill_id,
+            contribution=args.contribution,
+            note=args.note,
+        )
+        history = load_history(registry, args.skill_id)
+    finally:
+        registry.close()
+    print(f"Recorded: {args.skill_id} contributed {args.contribution} to {plan_id}.")
+    print("Evidence class: human. This is a judgement you made, not a measurement Forge took.")
+    print(history.summary_line())
+    return 0
+
+
+def _skills(args: argparse.Namespace) -> int:
+    _, registry = _registry(args.forge_home)
+    try:
+        history = load_history(registry, args.skill_id)
+    finally:
+        registry.close()
+    print(f"Skill: {history.skill_id}")
+    print(history.summary_line())
+    if history.roles:
+        print("Roles it has been assigned:")
+        for entry in history.roles:
+            print(f"  - {role_display(entry['role'])}: {entry['count']}")
+    if history.common_pairings:
+        print("Most often selected alongside:")
+        for entry in history.common_pairings:
+            print(f"  - {entry['skillId']}: {entry['count']}")
+    if history.selected_in_tasks and not history.evaluated:
+        print(
+            "\nNo contribution has been recorded. Selection frequency is not evidence of value;\n"
+            "record one with `forge learn <plan-id> <skill-id> --contribution high|medium|low|none`."
+        )
     return 0
 
 
