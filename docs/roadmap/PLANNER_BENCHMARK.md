@@ -221,10 +221,44 @@ consecutive runs.
 Explanation coverage was 1.00 for every variant: every admitted, excluded, and rejected
 Skill carried a reason.
 
-## Recommendation: FIX V2.1 FIRST
+## Recommendation history
 
-The recommendation is unchanged from the pre-variant-C draft, but **its reasoning is
-substantially different**, and one of the four original arguments has been withdrawn.
+This section is kept as a record of how the recommendation moved, because two of its
+conclusions turned out to be wrong and the corrections are the useful part.
+
+| Stage | Verdict | Basis | Outcome |
+| --- | --- | --- | --- |
+| After offline benchmark | FIX V2.1 FIRST | ranking gap 0.00 → "reranking is worthless" | **Withdrawn.** Recall-only reasoning; the precision effect was measured but left out of the conclusion. |
+| After variant C | FIX V2.1 FIRST | F6, F7, F2, F1 — real defects | Held. All five fixed in V2.1c. |
+| After live verification | **V2.1 CLOSED → GO V2.2** | `--fetch-missing` 1→6 admissions; variant C 12/12 with 0.000 irrelevant | Current. |
+
+## Final verdict: V2.1 CLOSED, GO V2.2
+
+Every condition set for closing V2.1 is met:
+
+- **F6 resolved on the surface that produced it.** 1 admission → 6, zero fetch failures.
+- **F7 resolved**, measured on Forge scanning Forge.
+- **F1 reachable**, proven through `create_plan` rather than in isolation.
+- **F2 and F3** shipped, with the `land` follow-up found and fixed during live verification.
+- **No benchmark regression.** Policy probes 6/6, determinism intact, variant C improved.
+- **Forge-on-Forge plans are usable**, which was the practical bar.
+
+The case for V2.2 is now evidence-backed rather than speculative. Historical evidence and
+exploration budgets both attach to the reranking stage, and the reranking stage is exactly
+where the measured value is: retrieval sets the ceiling, reranking decides how much noise
+comes with it, and variant C converts a raised ceiling into a perfect score while the offline
+variants cannot.
+
+Carry into V2.2, from the live run rather than the fixture: duplicate role assignment,
+absent aggregate license warning, and unstable role decomposition between runs. None block
+V2.2; all three interact with the composition DAG.
+
+## Superseded: FIX V2.1 FIRST
+
+*Retained for the record. Resolved by V2.1c and the live verification above.*
+
+The recommendation was unchanged from the pre-variant-C draft, but **its reasoning was
+substantially different**, and one of the four original arguments was withdrawn.
 
 ### Withdrawn
 
@@ -260,9 +294,11 @@ useful to attach.
 4. ~~**F2** — retrieval stemming and a relevance floor.~~ Ceiling rose from 0.95 to 1.00.
 5. ~~**F3** — an explicit coverage marker.~~ Present in `plan.json` and `plan.md`.
 
-See [V2.1c hardening results](#v21c-hardening-results). Two verifications remain outstanding
-and both need a live environment: a `--fetch-missing` run against the real catalog, and a
-variant C re-run to confirm the precision result survived the retrieval change.
+See [V2.1c hardening results](#v21c-hardening-results). Both outstanding verifications have
+since run against the live catalog and endpoint and both passed: `--fetch-missing` took a real
+plan from 1 admission to 6, and variant C reached 12/12 with its 0.000 irrelevant rate intact.
+
+**V2.1 is closed.** The blocking reason for FIX-V2.1-FIRST no longer holds.
 
 ### What changed the analysis
 
@@ -321,9 +357,62 @@ irrelevant rate rose by about 2 points as their recall rose by 5. The relevance 
 absorbed some of it, not all.
 
 The variant that should benefit most is C, which already prunes to 0.000 irrelevant — more
-good candidates with the same pruning ought to be a pure gain. **That is a prediction, not a
-measurement**; variant C has not been re-run since the change, because it needs an API key.
-Re-running it is the first thing to do before trusting this section.
+good candidates with the same pruning ought to be a pure gain. That was a prediction when this
+section was written; it has since been **measured and confirmed**. Variant C went from 11/12
+to 12/12 with its irrelevant rate unchanged at 0.000. See
+[live verification](#live-verification-2026-08-12-after-v21c).
+
+### Live verification (2026-08-12, after V2.1c)
+
+Both outstanding verifications ran against the real 9,610-entry catalog and the live OpenAI
+endpoint. Both passed.
+
+**F6, measured end to end.** Same goal, same model, same session, with and without the flag:
+
+```text
+forge plan "landing page conversion redesign" --provider openai --model gpt-5.6-luna
+  nominated=5  admitted=1  rejected=4      coverage 1/6 roles
+
+  ... --fetch-missing
+  fetched_for_plan=5  failed=0  skipped=0
+  nominated=6  admitted=6  rejected=0      coverage 4/7 roles
+```
+
+Admissions went from 1 to 6 and rejections to zero, with no fetch failures. F6 is resolved on
+the surface that produced it. Every fetched Skill still carried its own audit result and its
+own review cautions, so the gate was doing its job on the newly cached content rather than
+waving it through.
+
+**Variant C regression, measured.** The earlier prediction — that the LLM variant would absorb
+the precision cost of better retrieval — held:
+
+| Variant C | before V2.1c | after V2.1c |
+| --- | ---: | ---: |
+| scenarios passed | 11 / 12 | **12 / 12** |
+| role recall | 0.95 | **1.00** |
+| irrelevant rate | 0.000 | **0.000** |
+| mean admitted | 1.58 | 1.58 |
+
+The offline variants paid about 2 points of precision for their recall gain; the LLM variant
+paid nothing and converted the gain into a perfect score. This is the clearest evidence so far
+that retrieval and reranking are complementary rather than substitutes: retrieval sets the
+ceiling, reranking decides how much noise comes with it.
+
+**A new defect surfaced in the same run.** The live queries were:
+
+```text
+landing, page, conversion, redesign, python, land, lande, design
+```
+
+`design` is the F2 fix working as intended. `lande` is a non-word that matches nothing.
+`land` is the real problem: it is a legitimate word that matches genuinely unrelated Skills,
+and the relevance floor was treating a match on it as equal in value to a match on `landing`.
+The earlier note claiming these variants "cost one FTS lookup and match nothing" was wrong
+about `land`.
+
+Fixed by splitting the floor's ranking key: a candidate matching a term the user actually
+typed outranks one matching only a stemmed variant. Regression-tested with a `land survey`
+Skill competing against a `landing page` Skill.
 
 ### F6 — lazy detail fetch
 
@@ -368,10 +457,29 @@ Skills below as addressing the whole goal." The policy gate is unchanged.
 
 ### Known limitation introduced by F2
 
-Affix stripping is naive and produces some non-words: `planner` yields `plann`, and
-`recommendation` yields `commendation` from the `re-` prefix rule. These cost one FTS lookup
-each and match nothing, so the effect is wasted work rather than wrong results. A real stemmer
-would remove them at the cost of a dependency, which is not currently justified.
+Affix stripping is naive and produces non-words: `planner` yields `plann`, `landing` yields
+`lande`, and `recommendation` yields `commendation`. Those cost one FTS lookup each and match
+nothing.
+
+The more serious case is a variant that *is* a real word with an unrelated meaning — `landing`
+yields `land`. That one matches real Skills. The relevance floor now ranks a literal goal-term
+match above a stemmed-variant match so those candidates lose their slot to genuine matches,
+but they are still retrieved. A real stemmer would reduce the noise at the cost of a
+dependency, which remains unjustified while the floor is absorbing it.
+
+### Still open after V2.1
+
+Observed in the live run, neither blocking:
+
+- **Duplicate roles in a selection.** The 6-Skill plan assigned `conversion-audit` to two
+  Skills and `visual-design` to two more. Coverage is computed correctly, but composition
+  ordering has no opinion about two Skills claiming one role. V2.2's composition DAG is where
+  this belongs.
+- **Every fetched Skill reported "No license was detected".** The cautions surface correctly,
+  but a plan can currently be built entirely from unlicensed Skills with no aggregate warning.
+- **Role decomposition is unstable between runs.** The same goal produced 6 roles on one run
+  and 7 on the next. Coverage percentages are therefore not comparable across runs, which
+  matters once historical evidence starts accumulating in V2.2.
 
 ## Limits of this benchmark
 
@@ -380,16 +488,18 @@ would remove them at the cost of a dependency, which is not currently justified.
 - Ground truth role labels were written by the same author as the fixture. They encode one
   defensible opinion, not a consensus.
 - **The fixture does not reproduce the real cache distribution.** It is ~90% cached; the live
-  catalog is mostly uncached. That gap hid F6 entirely, which is the defect with the largest
-  practical impact. Treat every fixture number as an upper bound.
-- Variant C ran once, on one model (`gpt-5.6-luna`, OpenAI's lowest tier), on 12 scenarios,
-  with no repeat runs. The precision result is a strong single observation, not a stable
-  measurement — no variance, no model comparison, no cost accounting.
+  catalog is mostly uncached. That gap hid F6 entirely, and no fixture change can fix it —
+  only live runs will catch this class of defect. Treat every fixture number as an upper bound.
+- Variant C has now run twice on one model (`gpt-5.6-luna`, OpenAI's lowest tier) over 12
+  scenarios. Two consistent observations is better than one, but it is still not a variance
+  measurement, a model comparison, or a cost accounting.
 - The benchmark measures plan quality, not implementation quality. Vol.2 §38's real
   question — does a Forge plan produce better code than a plain prompt — requires agent
   execution and is out of scope for V2.1.
 - The Anthropic provider still has no live verification. Only the OpenAI path has been
   exercised end to end against a real endpoint.
+- Ground truth encodes one defensible opinion, written by the same author as the fixture. A
+  12/12 score is a score against that opinion, not against a consensus.
 
 ### Runtime verification
 

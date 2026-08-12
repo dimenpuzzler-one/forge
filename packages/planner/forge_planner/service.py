@@ -180,11 +180,15 @@ def retrieve_candidates(
     surfaced only by a project-context term such as `python` is not about this particular goal,
     and previously such candidates filled the top-K and crowded out real matches.
     """
-    goal_set = set(goal_terms(goal)) if goal else set()
-    goal_set |= {variant for term in goal_set for variant in morphological_variants(term)}
+    literal = set(goal_terms(goal)) if goal else set()
+    # A stemmed variant is a guess, so it scores below a term the user actually typed.
+    # "landing" yields "land", which matches real but unrelated Skills; without this split the
+    # relevance floor treats that match as being as good as a match on "landing" itself.
+    derived = {variant for term in literal for variant in morphological_variants(term)} - literal
 
     found: dict[str, SkillCandidate] = {}
-    goal_hits: dict[str, int] = {}
+    literal_hits: dict[str, int] = {}
+    derived_hits: dict[str, int] = {}
     total_hits: dict[str, int] = {}
     order: dict[str, int] = {}
 
@@ -199,18 +203,26 @@ def retrieve_candidates(
                     description=str(row["description"] or ""),
                 )
                 order[skill_id] = len(order)
-                goal_hits[skill_id] = 0
-                total_hits[skill_id] = 0
+                literal_hits[skill_id] = derived_hits[skill_id] = total_hits[skill_id] = 0
             total_hits[skill_id] += 1
-            if query in goal_set:
-                goal_hits[skill_id] += 1
+            if query in literal:
+                literal_hits[skill_id] += 1
+            elif query in derived:
+                derived_hits[skill_id] += 1
 
     if len(found) <= limit:
         return [found[skill_id] for skill_id in sorted(found, key=lambda item: order[item])]
 
     ranked = sorted(
         found,
-        key=lambda item: (-min(goal_hits[item], 1), -goal_hits[item], -total_hits[item], order[item]),
+        key=lambda item: (
+            -min(literal_hits[item], 1),        # matched a word the user typed
+            -min(derived_hits[item], 1),        # else matched a stemmed variant
+            -literal_hits[item],
+            -derived_hits[item],
+            -total_hits[item],
+            order[item],
+        ),
     )
     return [found[skill_id] for skill_id in ranked[:limit]]
 

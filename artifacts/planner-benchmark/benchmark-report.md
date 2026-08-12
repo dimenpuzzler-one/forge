@@ -1,6 +1,6 @@
 # Forge planner benchmark
 
-Generated: 2026-08-12T07:56:15.989478Z
+Generated: 2026-08-12T08:03:02.207383Z
 Milestone: Vol.2 V2.1 planner foundation
 
 This benchmark measures the V2.1 planner against an authored fixture catalog. It does not
@@ -9,10 +9,10 @@ explicitly out of scope for V2.1.
 
 ## Runtime
 
-- Sandbox runtime: Python 3.12.10
+- Sandbox runtime: Python 3.10.12 + temporary compatibility shim
 - Target runtime: Python 3.12
-- Local 3.12 verification required: false
-- This run executed on the repository's target interpreter.
+- Local 3.12 verification required: true
+- This run did not execute on the repository's target interpreter. Treat the results as indicative and re-run on Python 3.12 before relying on them.
 
 ## Fixture
 
@@ -28,7 +28,7 @@ The ORACROSS report artifacts referenced in vol2.md Appendix A live outside this
 | --- | --- | --- |
 | A-retrieval-only | ran | Raw FTS order, no model. The floor. |
 | B-stub-lexical | ran | Lexical overlap rerank over the same candidates. |
-| C-llm-provider | ran | Semantic rerank over the same candidates. |
+| C-llm-provider | skipped_external_provider: no external provider requested | Semantic rerank over the same candidates. |
 
 Every variant runs through the identical retrieval and the identical policy gate, so any
 difference is attributable to ranking alone.
@@ -39,7 +39,6 @@ difference is attributable to ranking alone.
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
 | A-retrieval-only | 12 | 7 | 1.00 | 1.00 | 0.00 | 0.15 | 4.17 | 1.00 | 1.00 |
 | B-stub-lexical | 12 | 8 | 1.00 | 1.00 | 0.00 | 0.14 | 3.92 | 1.00 | 1.00 |
-| C-llm-provider | 12 | 12 | 1.00 | 1.00 | 0.00 | 0.00 | 1.58 | 1.00 | 1.00 |
 
 **Role recall** counts required roles covered. **Retrieval ceiling** is the best recall any
 reranker could have reached given what retrieval actually returned. **Ranking gap** is
@@ -109,23 +108,6 @@ Warnings (not scored as failures):
 Warnings (not scored as failures):
 
 - `S12-backup-retention-uncached-only`: The role-correct Skill was unavailable, and Forge still returned a plan built from adjacent roles (database-performance, database-security, testing). The rejection is recorded in the plan, but nothing marks the returned selection as failing to address the goal.
-
-### C-llm-provider
-
-| Scenario | Kind | Recall | Ceiling | Irrelevant | Admitted | Verdict |
-| --- | --- | ---: | ---: | ---: | ---: | --- |
-| S01-landing-conversion-redesign | selection | 1.00 | 1.00 | 0.00 | 3 | pass |
-| S02-component-api-boolean-props | selection | 1.00 | 1.00 | 0.00 | 2 | pass |
-| S03-mobile-overflow-touch-targets | selection | 1.00 | 1.00 | 0.00 | 2 | pass |
-| S04-postgres-slow-joins | selection | 1.00 | 1.00 | 0.00 | 1 | pass |
-| S05-add-payment-flow | selection | 1.00 | 1.00 | 0.00 | 2 | pass |
-| S06-documentation-wording | selection | 1.00 | 1.00 | 0.00 | 1 | pass |
-| S07-authentication-architecture | selection | 1.00 | 1.00 | 0.00 | 2 | pass |
-| S08-positioning-before-copy | selection | 1.00 | 1.00 | 0.00 | 1 | pass |
-| S09-e2e-signup-funnel-tests | selection | 1.00 | 1.00 | 0.00 | 1 | pass |
-| S10-bundle-size-load-performance | selection | 1.00 | 1.00 | 0.00 | 1 | pass |
-| S11-rls-before-production-rollout | selection | 1.00 | 1.00 | 0.00 | 3 | pass |
-| S12-backup-retention-uncached-only | policy | n/a | 0.00 | 0.00 | 0 | pass |
 
 ## Claims this benchmark does not support
 

@@ -23,11 +23,10 @@ probes covering every ADR-006 invariant pass, across 99 tests that make no netwo
 planning quality the benchmark shows a real but one-sided effect: a semantic reranker does not
 find more of the right Skills, but it removes nearly all the wrong ones.
 
-Five defects found by the benchmark and by running Forge against itself are fixed
-([V2.1c](#v21c-real-catalog-hardening)). Two verifications remain outstanding, both needing a
-live catalog: a `--fetch-missing` run, and a re-run of the LLM benchmark variant since the
-retrieval change. Forge is a policy-bounded planner foundation — not a system that has been
-shown to produce better software than a good prompt.
+Five defects found by the benchmark and by running Forge against itself are fixed and verified
+against the live catalog ([V2.1c](#v21c-real-catalog-hardening)). Forge is a policy-bounded
+planner foundation — not a system that has been shown to produce better software than a good
+prompt.
 
 ## Safety and storage boundaries
 
@@ -374,10 +373,10 @@ zero and cut the selection from ~3.9 Skills to 1.6. It also declined to select a
 scenario where no correct Skill was available, where both offline variants substituted three
 unrelated ones.
 
-After V2.1c, the retrieval ceiling rose to 1.00 and both offline variants reached 1.00 recall —
-at a cost of about 2 points of precision, because more retrieval surfaces more noise and
-neither offline variant can filter it. Variant C has **not** been re-run since; whether its
-0.000 irrelevant rate survives is a prediction, not a measurement.
+After V2.1c the retrieval ceiling rose to 1.00 and every variant reached 1.00 recall. The
+offline variants paid about 2 points of precision for it, because more retrieval surfaces more
+noise and they cannot filter. The LLM variant paid nothing: 11/12 → **12/12** with its
+irrelevant rate unchanged at **0.000**.
 
 #### What it does not prove
 
@@ -387,9 +386,9 @@ a plain prompt is unmeasured; that needs agent execution, which V2.1 does not pe
 
 More importantly, **the fixture is ~90% cached and the real catalog is not.** A live run
 against 9,610 Skills had five of six nominations rejected for having no cached hash, which the
-fixture never surfaced and structurally cannot. `--fetch-missing` exists because of that run,
-and it has not itself been measured against the live catalog. Treat the fixture numbers as an
-upper bound.
+fixture never surfaced and structurally cannot. `--fetch-missing` exists because of that run.
+No fixture change fixes this class of blind spot — only live runs will. Treat the fixture
+numbers as an upper bound.
 
 The full evidence, including the two defects the fixture missed entirely and a withdrawn
 earlier conclusion, is in [the benchmark findings](docs/roadmap/PLANNER_BENCHMARK.md).
@@ -449,26 +448,35 @@ Measured effect:
 | | before | after |
 | --- | --- | --- |
 | Retrieval ceiling (fixture) | 0.95 | **1.00** |
-| Role recall, offline variants | 0.95 | **1.00** |
+| Role recall, all variants | 0.95 | **1.00** |
 | Irrelevant rate, offline variants | 0.126 / 0.121 | 0.155 / 0.136 |
+| Irrelevant rate, LLM variant | 0.000 | **0.000** |
+| Benchmark scenarios passed, LLM variant | 11 / 12 | **12 / 12** |
 | `forge scan` on this repo — `stack` | `['supabase']` | `[]` |
 | `forge scan` on this repo — `domains` | `['quant','payments','ai','saas']` | `[]` |
 | Retrieval queries for a landing goal | 8, three of them wrong | 5, none wrong |
 
-The precision cost is real and expected: better retrieval surfaces more true candidates *and*
-more noise, and the offline variants have no way to filter. The LLM variant should absorb it —
-that is a prediction, not a measurement.
+Better retrieval surfaces more true candidates *and* more noise. The offline variants have no
+way to filter, so they paid about 2 points of precision for their recall gain. The LLM variant
+paid nothing and converted the gain into a perfect score — retrieval sets the ceiling,
+reranking decides how much noise comes with it.
 
-### Before V2.2
+### Live verification
 
-Two verifications remain, both needing a live catalog:
+Both fixes were confirmed against the real 9,610-entry catalog, not just the fixture:
 
-1. `forge plan --fetch-missing` against skills.sh — F6 is a real-catalog defect and the fixture
-   structurally cannot reproduce it.
-2. `forge benchmark --external-provider openai` — to confirm the 0.000 irrelevant rate survived
-   the retrieval change.
+```text
+forge plan "landing page conversion redesign" --provider openai --model gpt-5.6-luna
+  nominated=5  admitted=1  rejected=4      coverage 1/6 roles
 
-Until those land, V2.2 is not recommended.
+  ... --fetch-missing
+  fetched_for_plan=5  failed=0
+  nominated=6  admitted=6  rejected=0      coverage 4/7 roles
+```
+
+**V2.1 is closed.** Carried into V2.2, all found in that live run and none blocking: duplicate
+role assignment within one selection, no aggregate warning when every selected Skill is
+unlicensed, and role decomposition that varies between runs of the same goal.
 
 Later phases add historical evidence, exploration budgets, composition DAGs, automatic
 finalization, curated knowledge publishing, and specialized agent adapters. Those are design

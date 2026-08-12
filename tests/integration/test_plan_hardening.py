@@ -320,6 +320,36 @@ class RetrievalHardeningTests(unittest.TestCase):
             self.assertEqual([], plain, "the bare token still matches nothing; FTS has no stemmer")
             self.assertIn("acme/skills/design", result.candidate_ids)
 
+    def test_a_literal_goal_match_outranks_a_stemmed_variant_match(self) -> None:
+        """`landing` yields the variant `land`, which matches real but unrelated Skills."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            home = Path(temp_dir)
+            registry = Registry(home / "forge.db")
+            registry.migrate()
+            source_id = registry.ensure_source(
+                name="skills-sh", source_type="skills_sh", base_url="https://skills.sh"
+            )
+            run_id = registry.start_sync_run(source_id)
+            registry.upsert_metadata_page(
+                source_id,
+                [
+                    SkillMetadata(id="acme/skills/land-survey", slug="land", name="Land survey",
+                                  description="land parcel survey records", source="acme/skills"),
+                    SkillMetadata(id="acme/skills/landing", slug="landing", name="Landing pages",
+                                  description="landing page structure", source="acme/skills"),
+                ],
+                next_page=None,
+                run_id=run_id,
+            )
+            try:
+                candidates = retrieve_candidates(
+                    registry, ["landing", "land"], limit=1, goal="landing page"
+                )
+            finally:
+                registry.close()
+
+            self.assertEqual(["acme/skills/landing"], [c.skill_id for c in candidates])
+
     def test_the_relevance_floor_prefers_goal_matches_over_context_matches(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             home = Path(temp_dir)
