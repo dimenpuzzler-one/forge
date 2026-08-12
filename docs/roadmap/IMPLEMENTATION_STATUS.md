@@ -17,6 +17,7 @@ This is the implementation ledger for the phases in `FORGE_CODEX_IMPLEMENTATION_
 | 8+ — Explorer, graph, labs, learning | Not started | — | — | Build only as working local slices |
 | V2.1 — Planner foundation | Partial | `forge_planner` provider abstraction, offline stub provider, Anthropic provider, deterministic FTS retrieval, policy gate, `forge plan` with `plan.json`/`plan.md` artifacts | 41 tests (20 new), plus a lying-provider demo showing 3 nominations reduced to 1 admission | No historical evidence lookup, no exploration slot, no DAG metadata; the Anthropic path is unverified against the live API |
 | V2.1b — Planner benchmark | Complete (fixture-tested) | `forge_benchmark` harness, 26-Skill fixture catalog, 12 graded scenarios, 3 variants, 6 adversarial policy probes, retrieval-ceiling metric, `forge benchmark` with committed artifacts | 60 tests; 6/6 probes pass; both deterministic variants reproduce exactly; verified on Python 3.12.10 with identical numbers | Measured ranking gap is 0.00; three open defects recorded (F1 unreachable audit block, F2 no retrieval stemming, F3 silent role substitution); variant C never ran |
+| V2.1d — Real-catalog hardening | Complete (fixture + self-dogfood verified) | F7 evidence-weighted project signals (schema 2), F6 `--fetch-missing` lazy detail fetch with structured rejection codes, F1 external-audit escalation onto `skill_versions`, F2 affix stripping and relevance floor, F3 coverage marker | 99 tests (23 new); retrieval ceiling 0.95 → 1.00; Forge-on-Forge scan contamination eliminated; 6/6 policy probes hold | `--fetch-missing` unverified against the live catalog; variant C not re-run since the retrieval change; offline precision cost ~2 points |
 | V2.1c — OpenAI provider + provider tests | Complete (live-verified) | `OpenAIProvider` on Chat Completions with `OPENAI_BASE_URL`/`OPENAI_MODEL` overrides, shared `post_json` helper with a `_post` seam, benchmark survives a mid-run provider failure, auth test environment isolation | 76 tests (16 new); benchmark variant C ran end to end against `gpt-5.6-luna`, confirming `max_completion_tokens` and `response_format` are accepted | The Anthropic path is still unverified against a live endpoint; variant C has one run on one model with no variance measurement |
 
 ## Phase 0–3 details
@@ -236,6 +237,82 @@ instead. See [the benchmark findings](PLANNER_BENCHMARK.md) for the evidence and
 - Variant C is one run, one model, 12 scenarios, no repeats. No variance or cost accounting.
 - The Anthropic provider still has no live verification.
 - The benchmark measures plan quality, not implementation quality.
+
+## Vol.2 Milestone V2.1c details (real-catalog hardening)
+
+Closes the five findings from the benchmark and from Forge-on-Forge dogfooding, in the order
+of practical impact rather than the order they were discovered.
+
+### F7 — project signals (`packages/project/forge_project/signals.py`)
+
+Evidence is weighted by origin: manifest 1.0, import 0.9, config 0.85, project name 0.35,
+README 0.20, prose 0.05, summed once per kind so repeating a word cannot fake a dependency.
+A technology is `used` at >= 0.5 and `mentioned` otherwise. `tests/fixtures/**`,
+`artifacts/**`, `.forge/**`, `node_modules/**`, `vendor/**`, and `examples/**` are excluded
+from signal extraction entirely. Only `used` technologies expand a planner retrieval query.
+
+Measured on this repository: `stack` went from `['supabase']` to `[]`, `domains` from
+`['quant', 'payments', 'ai', 'saas']` to `[]`, and a landing-page goal from 8 queries with 3
+wasted to 5 with none wasted.
+
+Project context is now `schemaVersion: 2`; `mentioned` and `signals` are additive and
+`stack`/`domains` keep their shape.
+
+### F6 — lazy detail fetch (`packages/planner/forge_planner/fetch.py`)
+
+`forge plan --fetch-missing [--fetch-budget N]`. Gate rejections now carry structured codes,
+and only `detail-not-cached` is eligible for a fetch. Eligibility also requires membership in
+the retrieved candidate set, so a provider cannot cause a network request for an arbitrary id.
+Detail is stored through `store_detail`, the same path `forge inspect` uses. After fetching,
+the gate is re-run from scratch rather than patched.
+
+### F1 — audit hard block reachability (`packages/registry/forge_registry/database.py`)
+
+`store_external_audits` now escalates the worst partner verdict onto `skill_versions`, which
+is the table the gate reads. Escalate only: a partner cannot soften a local static warning.
+Proven by an integration test that runs `create_plan` end to end.
+
+### F2 — retrieval (`packages/planner/forge_planner/service.py`)
+
+Conservative affix stripping in stdlib — no NLP dependency — with a four-character minimum
+stem, plus a relevance floor that prefers candidates matching a goal-derived term over ones
+matching only a project-context term. Retrieval ceiling rose from 0.95 to 1.00.
+
+### F3 — coverage marker
+
+`plan.json` and `plan.md` state covered and uncovered roles and attribute each loss to a
+Skill and a rejection code. The policy gate is unchanged.
+
+### Benchmark: before and after V2.1c
+
+| Variant | Ceiling | Recall | Irrelevant | Admitted | Passed |
+| --- | --- | --- | --- | --- | --- |
+| A — retrieval-only | 0.95 → 1.00 | 0.95 → 1.00 | 0.126 → 0.155 | 3.92 → 4.17 | 7 → 7 |
+| B — stub lexical | 0.95 → 1.00 | 0.95 → 1.00 | 0.121 → 0.136 | 3.75 → 3.92 | 8 → 8 |
+| C — LLM | not re-run | not re-run | not re-run | not re-run | not re-run |
+
+Policy probes remain 6/6 and both deterministic variants remain reproducible. The precision
+cost is expected: better retrieval surfaces more true candidates and more noise, and neither
+offline variant can filter.
+
+### Verification
+
+```text
+python -m unittest discover                     PASS (99 tests, 23 new)
+python -m compileall -q apps packages tests     PASS
+forge benchmark                                 PASS (6/6 probes, exit 0)
+forge scan .  (Forge on Forge)                  contamination eliminated
+```
+
+### Outstanding
+
+- `--fetch-missing` has never run against the live catalog. The fixture is ~90% cached and
+  structurally cannot reproduce F6, which is why it hid the defect.
+- Variant C has not been re-run since the retrieval change.
+- Affix stripping produces some non-words (`planner` → `plann`, `recommendation` →
+  `commendation`). They cost one FTS lookup each and match nothing.
+- `forge recommend` inherits the stricter `stack`/`domains`, so it will return fewer results
+  for documentation-heavy projects. That is the intended correction, not a regression.
 
 ## Commit ledger
 

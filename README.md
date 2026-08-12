@@ -19,12 +19,15 @@ what risk level. A model's selection is a proposal; admission is a separate dete
 decision that the model cannot influence.
 
 **Current honest status.** The safety boundary is demonstrated by tests — six adversarial
-probes covering every ADR-006 invariant pass. On planning quality the benchmark shows a real
-but one-sided effect: a semantic reranker does not find more of the right Skills, but it
-removes nearly all the wrong ones. Retrieval is the binding constraint, and on the real
-catalog most nominated Skills are rejected for having no cached version, which makes the
-planner impractical today. Forge is a policy-bounded planner foundation, not a system that has
-been shown to produce better software than a good prompt.
+probes covering every ADR-006 invariant pass, across 99 tests that make no network call. On
+planning quality the benchmark shows a real but one-sided effect: a semantic reranker does not
+find more of the right Skills, but it removes nearly all the wrong ones.
+
+Five defects found by the benchmark and by running Forge against itself are fixed
+([V2.1c](#v21c-real-catalog-hardening)). Two verifications remain outstanding, both needing a
+live catalog: a `--fetch-missing` run, and a re-run of the LLM benchmark variant since the
+retrieval change. Forge is a policy-bounded planner foundation — not a system that has been
+shown to produce better software than a good prompt.
 
 ## Safety and storage boundaries
 
@@ -63,7 +66,11 @@ For persistent local skills.sh authentication, put only the required token in th
 
 `forge doctor` reports only `skills.sh auth: available|missing` and `auth source: process-env|forge-local-env|none`; it never prints the token.
 
-## Commands implemented in MVP-0
+## Commands
+
+Phases 0–7 (`scan`, `sync`, `search`, `inspect`, `recommend`, `pin`, `collection`, `compose`,
+`bundle`, `use`, `diff`, `outdated`, `audit-skill`, `doctor`, `status`) are the plumbing layer.
+`plan` and `benchmark` are the Vol.2 porcelain built on top of it.
 
 ### Scan a project
 
@@ -73,6 +80,29 @@ forge scan
 ```
 
 The command writes `.forge\project.json` with a bounded, reproducible context: project root, detected languages and stack, domain/architecture hints, test-command hints, and the safe documents considered. It does not execute project code.
+
+**A mention is not a use.** Technology signals are weighted by where the evidence was found. A
+dependency in a manifest, an actual import, or a technology-specific config file is classified
+`used`. A term appearing only in prose is `mentioned` — recorded with its sources, never
+treated as a project fact, and never used to expand a planner retrieval query. Authored test
+fixtures, generated artifacts, and `.forge/` contribute nothing at all.
+
+Forge found this defect by scanning itself: documentation examples and benchmark fixtures had
+promoted `supabase`, `quant`, and `payments` into the declared stack, which then spent three of
+eight retrieval queries on domains the project does not have.
+
+```json
+{
+  "technology": "supabase",
+  "classification": "mentioned",
+  "confidence": 0.05,
+  "sources": ["docs/development-log/2026-08-11.md"],
+  "evidenceKinds": ["prose"]
+}
+```
+
+Context files are `schemaVersion: 2`. `stack` and `domains` keep their shape but now contain
+only `used` technologies; `mentioned` and `signals` are additive.
 
 ### Sync metadata
 
@@ -122,6 +152,10 @@ forge recommend C:\dev\stockback
 ```
 
 Recommendations are deterministic and evidence-led: stack, language, and domain signals activate focused local-registry searches. Each result states the project evidence and any relevant caution (for example, when detail has not been inspected locally). Forge does not call an LLM or network service for this command.
+
+Since schema 2 those signals require strong evidence, so a documentation-heavy project returns
+fewer recommendations than it used to. That is the intended correction: recommending
+payment-security Skills to a project because its README uses "payment" in an example was wrong.
 
 ### Pin an explicit, immutable version
 
@@ -177,8 +211,10 @@ forge plan "landing page conversion redesign" --provider anthropic
 
 `forge plan` turns a goal into a Skill selection in two stages with opposite trust properties.
 
-**Forge retrieves.** Stop words are dropped, project stack/domain/language terms are added,
-and SQLite FTS returns a bounded candidate list. No network, no model.
+**Forge retrieves.** Stop words are dropped; only technologies the scanner classified as `used`
+expand the query; conservative affix stripping is applied so `redesign` also searches `design`;
+SQLite FTS returns a bounded candidate list, and a relevance floor prefers candidates matching
+a goal term over ones matching only a project-context term. No network, no model.
 
 **A provider proposes.** It receives the goal, a trimmed project context, and that candidate
 list — id, name, source, truncated description only. Skill file contents are never sent. It
@@ -187,10 +223,22 @@ Everything it returns is untrusted.
 
 **Forge admits.** Each nomination must clear four deterministic checks: it was in the retrieved
 candidate set, it exists in the local registry, its detail is cached at an immutable hash, and
-its static audit is not a hard block. Anything else is rejected with a recorded reason, and
-invented Skill ids are counted and reported. Forge may raise the risk level from the goal text
-(auth, payment, credential, secret, migration, billing, production) but never lowers what the
-provider reported. See [ADR-006](docs/decisions/ADR-006-llm-planner-cannot-override-the-policy-gate.md).
+its static audit is not a hard block. Anything else is rejected with a recorded reason and a
+structured code, and invented Skill ids are counted and reported. Forge may raise the risk
+level from the goal text (auth, payment, credential, secret, migration, billing, production)
+but never lowers what the provider reported.
+See [ADR-006](docs/decisions/ADR-006-llm-planner-cannot-override-the-policy-gate.md).
+
+Rejection codes are part of the contract, so a later stage branches on the code rather than
+parsing prose:
+
+| Code | Meaning |
+| --- | --- |
+| `not-in-candidate-set` | The provider named an id retrieval never produced |
+| `unknown-skill` | No such Skill exists in the local registry |
+| `detail-not-cached` | No immutable version hash yet — the only code `--fetch-missing` acts on |
+| `audit-blocked` | Static or partner audit returned fail/high |
+| `duplicate-nomination` | The same Skill was nominated more than once |
 
 #### Providers
 
@@ -221,12 +269,51 @@ at any OpenAI-compatible gateway to use one; the request shape is plain Chat Com
 A model name is not a provider name. Use `--provider openai --model gpt-5.6-luna`; passing a
 model to `--provider` fails with a message that says so.
 
-Both write `<FORGE_HOME>\plans\<plan-id>\plan.json` and `plan.md`. `plan.json` is normalized data
-for later stages; `plan.md` is the human review surface and separates observed local facts from
-inferred model judgment. A plan can legitimately admit zero Skills; that is reported as a blocker
-rather than filled in with a weaker selection.
+Every plan writes `<FORGE_HOME>\plans\<plan-id>\plan.json` and `plan.md`. `plan.json` is
+normalized data for later stages; `plan.md` is the human review surface and separates observed
+local facts from inferred model judgment. A plan can legitimately admit zero Skills; that is
+reported as a blocker rather than filled in with a weaker selection.
+
+`plan.json` top-level keys: `retrieval` (queries and candidate ids), `selectedSkills`,
+`excludedSkills` (each with `excludedBy` and a rejection `code`), `policyGate` (counts plus
+`rejectionCodes` and `hallucinatedIds`), `coverage`, `detailFetch`, `verificationPlan`,
+`humanApprovalRequired`, and `evidence` split into observed / inferred / human-required.
 
 `forge plan` does not compose, bundle, or run anything. It produces a reviewable proposal.
+
+#### Missing detail: `--fetch-missing`
+
+A Skill with no cached immutable version cannot enter a plan. On the real catalog most Skills
+are uncached, so a plan can come back as one Skill and a list of `forge inspect` homework.
+
+```powershell
+forge plan "landing page conversion redesign" --fetch-missing --fetch-budget 8
+```
+
+This resolves detail for nominated Skills that were rejected *only* for lacking a cached
+version, then re-runs the gate from scratch. Fetching is not admission:
+
+- only ids the deterministic retrieval already produced are eligible, so a provider cannot
+  name an arbitrary Skill and cause a network request;
+- an audit-blocked Skill is never re-fetched for a second opinion;
+- detail goes through the same path as `forge inspect`, keeping path validation, size limits,
+  hashing, snapshotting, and the static audit;
+- a fetch failure leaves the rejection in place;
+- risk escalation and every other policy check are re-applied afterwards.
+
+Without the flag, `forge plan` never touches the network.
+
+#### Coverage
+
+Every plan states how much of the decomposed goal it actually covers, names the uncovered
+roles, and attributes each loss to a specific Skill and rejection code:
+
+```text
+Coverage: INCOMPLETE — 1/2 roles covered.
+  missing role: visual-design (lost to: acme/skills/design (detail-not-cached))
+```
+
+An incomplete plan is labelled as incomplete rather than left to read as a finished one.
 
 ### Measure the planner
 
@@ -269,6 +356,8 @@ coverage is 1.00 — every admitted, excluded, and rejected Skill carries a reas
 
 #### What the measurements say
 
+Measured before the V2.1c retrieval change:
+
 | Variant | Role recall | Ranking gap | Irrelevant rate | Mean admitted | Passed |
 | --- | ---: | ---: | ---: | ---: | ---: |
 | A — retrieval-only | 0.95 | 0.00 | 0.126 | 3.92 | 7 / 12 |
@@ -277,13 +366,18 @@ coverage is 1.00 — every admitted, excluded, and rejected Skill carries a reas
 
 The two halves say opposite things, and both are true.
 
-**Reranking does not improve recall.** All three variants sit at 0.95 with a ranking gap of
-0.00 — every shortfall is caused by retrieval, and no provider can raise that ceiling.
+**Reranking does not improve recall.** All three variants sat at 0.95 with a ranking gap of
+0.00 — every shortfall was caused by retrieval, and no provider can raise that ceiling.
 
 **Reranking is decisive for precision.** The LLM variant took the irrelevant-selection rate to
 zero and cut the selection from ~3.9 Skills to 1.6. It also declined to select anything in the
 scenario where no correct Skill was available, where both offline variants substituted three
 unrelated ones.
+
+After V2.1c, the retrieval ceiling rose to 1.00 and both offline variants reached 1.00 recall —
+at a cost of about 2 points of precision, because more retrieval surfaces more noise and
+neither offline variant can filter it. Variant C has **not** been re-run since; whether its
+0.000 irrelevant rate survives is a prediction, not a measurement.
 
 #### What it does not prove
 
@@ -293,13 +387,12 @@ a plain prompt is unmeasured; that needs agent execution, which V2.1 does not pe
 
 More importantly, **the fixture is ~90% cached and the real catalog is not.** A live run
 against 9,610 Skills had five of six nominations rejected for having no cached hash, which the
-fixture never surfaced. Treat the numbers above as an upper bound.
+fixture never surfaced and structurally cannot. `--fetch-missing` exists because of that run,
+and it has not itself been measured against the live catalog. Treat the fixture numbers as an
+upper bound.
 
-Forge is a **policy-bounded planner foundation**. The safety boundary is demonstrated by
-tests. Five open defects are recorded in
-[the benchmark findings](docs/roadmap/PLANNER_BENCHMARK.md), the two most damaging of which
-were found by running Forge on Forge rather than by the fixture, alongside a FIX-V2.1-FIRST
-recommendation.
+The full evidence, including the two defects the fixture missed entirely and a withdrawn
+earlier conclusion, is in [the benchmark findings](docs/roadmap/PLANNER_BENCHMARK.md).
 
 ## Development
 
@@ -307,12 +400,14 @@ The repository uses a small Python monorepo boundary:
 
 - `apps/cli/` — CLI entry point
 - `packages/benchmark/` — planner measurement harness, fixtures, adversarial policy probes
-- `packages/core/` — paths, errors, shared models
-- `packages/planner/` — provider abstraction, deterministic policy gate, plan artifacts
-- `packages/project/` — secret-safe Project Scanner
-- `packages/registry/` — SQLite migrations, versions, snapshots
-- `packages/sources/` — skills.sh adapter and sync resilience
+- `packages/compose/` — composition manifests and deterministic analysis
+- `packages/core/` — paths, errors, auth resolution, shared models
+- `packages/planner/` — provider abstraction, policy gate, lazy detail fetch, plan artifacts
+- `packages/project/` — secret-safe Project Scanner and weighted technology signals
+- `packages/registry/` — SQLite migrations, versions, snapshots, audits
+- `packages/runtime/` — generic filesystem session bundles
 - `packages/search/` — local search boundary
+- `packages/sources/` — skills.sh adapter and sync resilience
 
 Run the current checks on Windows PowerShell:
 
@@ -323,33 +418,57 @@ python -m unittest discover -s tests -t . -v
 forge benchmark          # exits non-zero if an ADR-006 policy probe regresses
 ```
 
-Tests never make a network call. The two network providers expose a `_post` seam that the
-tests replace, so request shape, error translation, and response parsing are verified without
-a key. What that cannot prove is that a live endpoint accepts the request — running
-`forge benchmark --external-provider openai` with a real key is still outstanding.
+All 99 tests run offline. The two network providers expose a `_post` seam that the tests
+replace, so request shape, error translation, and response parsing are verified without a key.
+
+That cannot prove a live endpoint accepts the request, so the OpenAI path was additionally
+verified for real: `forge benchmark --external-provider openai --model gpt-5.6-luna` completed
+end to end, confirming `max_completion_tokens` and `response_format` are accepted. **The
+Anthropic path has never made a live call.**
 
 ## Roadmap
 
-Current milestone: **Vol.2 V2.1 planner foundation plus its benchmark.** Phases 0–7 are
-implemented and fixture-tested; `forge plan` and `forge benchmark` are the newest slices.
+Current milestone: **Vol.2 V2.1 planner foundation, its benchmark, and V2.1c hardening.**
 
-The benchmark recommendation is **FIX V2.1 FIRST**, not GO V2.2. The suggested order, highest
-practical impact first:
+### V2.1c real-catalog hardening
 
-1. **Fetch detail lazily for nominated candidates** behind an explicit flag. On the live
-   catalog five of six nominations are rejected for having no cached hash, so `forge plan`
-   currently returns one Skill and a list of `forge inspect` homework (F6).
-2. **Separate "uses X" from "mentions X" in the scanner.** Run inside this repository, Forge
-   reported `stack: ['supabase']` and `domains: ['quant', 'payments']` because those words
-   appear in prose and fixtures, wasting three of eight retrieval queries (F7).
-3. **Make the audit hard block reachable** — it is currently dead code (F1).
-4. **Add retrieval stemming and a relevance floor.** `search("redesign")` returns 0 results
-   while `search("design")` returns 5, and no reranker can repair that (F2).
-5. **Mark role coverage explicitly** in the plan artifact instead of substituting silently (F3).
+Five defects, all found by measurement rather than review — the two most damaging by running
+Forge against itself and against the live catalog, neither of which the authored fixture could
+surface:
 
-Note that the reranking stage itself is *not* on this list: the LLM variant took the
-irrelevant-selection rate to zero, so V2.2's historical evidence has a real place to attach —
-once its inputs and outputs stop being wasted.
+| | Defect | Fix | ADR |
+| --- | --- | --- | --- |
+| F6 | On the live catalog, five of six nominations were rejected for having no cached hash | `forge plan --fetch-missing` resolves detail for exactly those, then re-runs the gate | [ADR-008](docs/decisions/ADR-008-fetching-detail-is-not-admission.md) |
+| F7 | The scanner read document mentions as project facts, wasting 3 of 8 queries | Weighted evidence; only `used` technologies expand a query | [ADR-007](docs/decisions/ADR-007-a-mention-is-not-a-dependency.md) |
+| F1 | The audit hard block was unreachable dead code | External audits escalate onto the version row the gate reads | — |
+| F2 | `search("redesign")` returned 0 results while `search("design")` returned 5 | Affix stripping and a relevance floor | — |
+| F3 | An incomplete plan looked complete | Coverage marker naming uncovered roles and what each was lost to | — |
+
+Measured effect:
+
+| | before | after |
+| --- | --- | --- |
+| Retrieval ceiling (fixture) | 0.95 | **1.00** |
+| Role recall, offline variants | 0.95 | **1.00** |
+| Irrelevant rate, offline variants | 0.126 / 0.121 | 0.155 / 0.136 |
+| `forge scan` on this repo — `stack` | `['supabase']` | `[]` |
+| `forge scan` on this repo — `domains` | `['quant','payments','ai','saas']` | `[]` |
+| Retrieval queries for a landing goal | 8, three of them wrong | 5, none wrong |
+
+The precision cost is real and expected: better retrieval surfaces more true candidates *and*
+more noise, and the offline variants have no way to filter. The LLM variant should absorb it —
+that is a prediction, not a measurement.
+
+### Before V2.2
+
+Two verifications remain, both needing a live catalog:
+
+1. `forge plan --fetch-missing` against skills.sh — F6 is a real-catalog defect and the fixture
+   structurally cannot reproduce it.
+2. `forge benchmark --external-provider openai` — to confirm the 0.000 irrelevant rate survived
+   the retrieval change.
+
+Until those land, V2.2 is not recommended.
 
 Later phases add historical evidence, exploration budgets, composition DAGs, automatic
 finalization, curated knowledge publishing, and specialized agent adapters. Those are design

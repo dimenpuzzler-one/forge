@@ -13,6 +13,15 @@ HIGH_RISK_MARKERS = ("auth", "payment", "credential", "secret", "migration", "bi
 EXPLORATION_BUDGET = {"low": 0.30, "medium": 0.15, "high": 0.0}
 
 
+# Structured rejection reasons. Callers must branch on these rather than parsing `reason`,
+# so that a wording change can never alter which Skills a later stage acts on.
+REJECT_NOT_A_CANDIDATE = "not-in-candidate-set"
+REJECT_UNKNOWN_SKILL = "unknown-skill"
+REJECT_DETAIL_NOT_CACHED = "detail-not-cached"
+REJECT_AUDIT_BLOCKED = "audit-blocked"
+REJECT_DUPLICATE = "duplicate-nomination"
+
+
 @dataclass(frozen=True)
 class GateDecision:
     """One deterministic verdict about one Skill the provider proposed."""
@@ -28,6 +37,7 @@ class GateDecision:
     risk_level: str | None = None
     requires_review: bool = False
     review_notes: list[str] = field(default_factory=list)
+    code: str | None = None
 
 
 @dataclass(frozen=True)
@@ -67,7 +77,11 @@ def apply_policy_gate(
     for nomination in proposal.selected:
         if nomination.skill_id in seen:
             rejected.append(
-                _reject(nomination, "The provider nominated this Skill more than once; the duplicate was dropped.")
+                _reject(
+                    nomination,
+                    "The provider nominated this Skill more than once; the duplicate was dropped.",
+                    code=REJECT_DUPLICATE,
+                )
             )
             continue
         seen.add(nomination.skill_id)
@@ -79,6 +93,7 @@ def apply_policy_gate(
                     nomination,
                     "Not present in the retrieved candidate set. Forge treats an unrequested id as "
                     "an unverifiable provider claim and drops it.",
+                    code=REJECT_NOT_A_CANDIDATE,
                 )
             )
             continue
@@ -87,7 +102,7 @@ def apply_policy_gate(
         if skill is None:
             hallucinated.append(nomination.skill_id)
             rejected.append(
-                _reject(nomination, "No such Skill exists in the local registry.")
+                _reject(nomination, "No such Skill exists in the local registry.", code=REJECT_UNKNOWN_SKILL)
             )
             continue
 
@@ -96,8 +111,10 @@ def apply_policy_gate(
                 _reject(
                     nomination,
                     "Detail is not cached, so no immutable version hash exists yet. "
-                    f"Run `forge inspect {nomination.skill_id}` before this Skill can enter a plan.",
+                    f"Run `forge inspect {nomination.skill_id}`, or re-plan with --fetch-missing, "
+                    "before this Skill can enter a plan.",
                     source=str(skill["source_repo"]),
+                    code=REJECT_DETAIL_NOT_CACHED,
                 )
             )
             continue
@@ -116,6 +133,7 @@ def apply_policy_gate(
                     content_hash=str(skill["content_hash"]),
                     security_status=security_status,
                     risk_level=risk_level,
+                    code=REJECT_AUDIT_BLOCKED,
                 )
             )
             continue
@@ -190,6 +208,7 @@ def _reject(
     content_hash: str | None = None,
     security_status: str | None = None,
     risk_level: str | None = None,
+    code: str | None = None,
 ) -> GateDecision:
     return GateDecision(
         skill_id=nomination.skill_id,
@@ -201,4 +220,5 @@ def _reject(
         content_hash=content_hash,
         security_status=security_status,
         risk_level=risk_level,
+        code=code,
     )

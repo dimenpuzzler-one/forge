@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-08-12T07:06:21.434682Z",
+  "generatedAt": "2026-08-12T07:56:15.989478Z",
   "milestone": "Vol.2 V2.1 planner foundation",
   "runtime": {
     "sandboxRuntime": "Python 3.12.10",
@@ -50,12 +50,12 @@
       "selectionScenarios": 11,
       "passed": 7,
       "failed": 5,
-      "meanRoleRecall": 0.9545,
-      "meanRetrievalCeiling": 0.9545,
+      "meanRoleRecall": 1.0,
+      "meanRetrievalCeiling": 1.0,
       "meanRankingGap": 0.0,
-      "meanIrrelevantSelectionRate": 0.1258,
+      "meanIrrelevantSelectionRate": 0.1545,
       "meanExplanationCoverage": 1.0,
-      "meanAdmittedCount": 3.9167,
+      "meanAdmittedCount": 4.1667,
       "riskGatePassRate": 1.0,
       "totalForbiddenAdmitted": 0,
       "totalHallucinationsAdmitted": 0
@@ -65,12 +65,12 @@
       "selectionScenarios": 11,
       "passed": 8,
       "failed": 4,
-      "meanRoleRecall": 0.9545,
-      "meanRetrievalCeiling": 0.9545,
+      "meanRoleRecall": 1.0,
+      "meanRetrievalCeiling": 1.0,
       "meanRankingGap": 0.0,
-      "meanIrrelevantSelectionRate": 0.1212,
+      "meanIrrelevantSelectionRate": 0.1364,
       "meanExplanationCoverage": 1.0,
-      "meanAdmittedCount": 3.75,
+      "meanAdmittedCount": 3.9167,
       "riskGatePassRate": 1.0,
       "totalForbiddenAdmitted": 0,
       "totalHallucinationsAdmitted": 0
@@ -78,10 +78,10 @@
     "C-llm-provider": {
       "scenarios": 12,
       "selectionScenarios": 11,
-      "passed": 11,
-      "failed": 1,
-      "meanRoleRecall": 0.9545,
-      "meanRetrievalCeiling": 0.9545,
+      "passed": 12,
+      "failed": 0,
+      "meanRoleRecall": 1.0,
+      "meanRetrievalCeiling": 1.0,
       "meanRankingGap": 0.0,
       "meanIrrelevantSelectionRate": 0.0,
       "meanExplanationCoverage": 1.0,
@@ -204,28 +204,30 @@
         "acme/marketing/page-cro",
         "acme/marketing/copywriting",
         "acme/perf/frontend-bundle-size",
-        "acme/web/react-composition-patterns"
+        "acme/web/react-composition-patterns",
+        "acme/design/frontend-design",
+        "acme/security/auth-architecture"
       ],
       "admittedRoles": [
         "conversion",
         "copy",
         "performance",
-        "component-architecture"
+        "component-architecture",
+        "visual-design",
+        "auth"
       ],
-      "nominated": 4,
+      "nominated": 6,
       "rejected": 0,
-      "roleRecall": 0.5,
-      "requiredMissing": [
-        "visual-design"
-      ],
-      "retrievalCeiling": 0.5,
-      "unreachableRoles": [
-        "visual-design"
-      ],
+      "roleRecall": 1.0,
+      "requiredMissing": [],
+      "retrievalCeiling": 1.0,
+      "unreachableRoles": [],
       "rankingGap": 0.0,
       "substitutedRoles": [],
-      "irrelevantSelectionRate": 0.0,
-      "irrelevantSelected": [],
+      "irrelevantSelectionRate": 0.16666666666666666,
+      "irrelevantSelected": [
+        "acme/security/auth-architecture (auth)"
+      ],
       "forbiddenSelected": [],
       "explanationCoverage": 1.0,
       "unexplained": [],
@@ -240,7 +242,7 @@
       "policyRejectionMatched": null,
       "hallucinatedIds": [],
       "failures": [
-        "Missing required role(s): visual-design (retrieval never surfaced an admissible Skill for: visual-design — this is a retrieval failure, not a ranking failure)"
+        "Selected 1 Skill(s) in roles marked irrelevant for this goal: acme/security/auth-architecture (auth)"
       ],
       "warnings": [],
       "passed": false
@@ -520,15 +522,17 @@
         "acme/marketing/product-marketing-context",
         "acme/marketing/copywriting",
         "acme/marketing/page-cro",
-        "acme/data/postgres-rls-safety"
+        "acme/data/postgres-rls-safety",
+        "acme/quant/backtesting-reproducibility"
       ],
       "admittedRoles": [
         "positioning",
         "copy",
         "conversion",
-        "database-security"
+        "database-security",
+        "quant"
       ],
-      "nominated": 4,
+      "nominated": 5,
       "rejected": 0,
       "roleRecall": 1.0,
       "requiredMissing": [],
@@ -536,9 +540,10 @@
       "unreachableRoles": [],
       "rankingGap": 0.0,
       "substitutedRoles": [],
-      "irrelevantSelectionRate": 0.25,
+      "irrelevantSelectionRate": 0.4,
       "irrelevantSelected": [
-        "acme/data/postgres-rls-safety (database-security)"
+        "acme/data/postgres-rls-safety (database-security)",
+        "acme/quant/backtesting-reproducibility (quant)"
       ],
       "forbiddenSelected": [],
       "explanationCoverage": 1.0,
@@ -554,7 +559,7 @@
       "policyRejectionMatched": null,
       "hallucinatedIds": [],
       "failures": [
-        "Selected 1 Skill(s) in roles marked irrelevant for this goal: acme/data/postgres-rls-safety (database-security)"
+        "Selected 2 Skill(s) in roles marked irrelevant for this goal: acme/data/postgres-rls-safety (database-security), acme/quant/backtesting-reproducibility (quant)"
       ],
       "warnings": [],
       "passed": false
@@ -765,28 +770,30 @@
         "acme/marketing/page-cro",
         "acme/marketing/copywriting",
         "acme/perf/frontend-bundle-size",
-        "acme/web/react-composition-patterns"
+        "acme/web/react-composition-patterns",
+        "acme/design/frontend-design",
+        "acme/infra/ci-pipeline"
       ],
       "admittedRoles": [
         "conversion",
         "copy",
         "performance",
-        "component-architecture"
+        "component-architecture",
+        "visual-design",
+        "infrastructure"
       ],
-      "nominated": 4,
+      "nominated": 6,
       "rejected": 0,
-      "roleRecall": 0.5,
-      "requiredMissing": [
-        "visual-design"
-      ],
-      "retrievalCeiling": 0.5,
-      "unreachableRoles": [
-        "visual-design"
-      ],
+      "roleRecall": 1.0,
+      "requiredMissing": [],
+      "retrievalCeiling": 1.0,
+      "unreachableRoles": [],
       "rankingGap": 0.0,
       "substitutedRoles": [],
-      "irrelevantSelectionRate": 0.0,
-      "irrelevantSelected": [],
+      "irrelevantSelectionRate": 0.16666666666666666,
+      "irrelevantSelected": [
+        "acme/infra/ci-pipeline (infrastructure)"
+      ],
       "forbiddenSelected": [],
       "explanationCoverage": 1.0,
       "unexplained": [],
@@ -801,7 +808,7 @@
       "policyRejectionMatched": null,
       "hallucinatedIds": [],
       "failures": [
-        "Missing required role(s): visual-design (retrieval never surfaced an admissible Skill for: visual-design — this is a retrieval failure, not a ranking failure)"
+        "Selected 1 Skill(s) in roles marked irrelevant for this goal: acme/infra/ci-pipeline (infrastructure)"
       ],
       "warnings": [],
       "passed": false
@@ -1317,23 +1324,19 @@
       "admittedSkillIds": [
         "acme/marketing/page-cro",
         "acme/marketing/copywriting",
-        "acme/perf/frontend-bundle-size"
+        "acme/design/frontend-design"
       ],
       "admittedRoles": [
         "conversion",
         "copy",
-        "performance"
+        "visual-design"
       ],
       "nominated": 3,
       "rejected": 0,
-      "roleRecall": 0.5,
-      "requiredMissing": [
-        "visual-design"
-      ],
-      "retrievalCeiling": 0.5,
-      "unreachableRoles": [
-        "visual-design"
-      ],
+      "roleRecall": 1.0,
+      "requiredMissing": [],
+      "retrievalCeiling": 1.0,
+      "unreachableRoles": [],
       "rankingGap": 0.0,
       "substitutedRoles": [],
       "irrelevantSelectionRate": 0.0,
@@ -1351,11 +1354,9 @@
       "roleOrderRespected": null,
       "policyRejectionMatched": null,
       "hallucinatedIds": [],
-      "failures": [
-        "Missing required role(s): visual-design (retrieval never surfaced an admissible Skill for: visual-design — this is a retrieval failure, not a ranking failure)"
-      ],
+      "failures": [],
       "warnings": [],
-      "passed": false
+      "passed": true
     },
     {
       "scenarioId": "S02-component-api-boolean-props",

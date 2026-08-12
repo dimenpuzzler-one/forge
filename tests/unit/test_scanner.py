@@ -42,9 +42,16 @@ class ScannerTests(unittest.TestCase):
             output = write_project_context(context)
 
             self.assertIn("python", context["languages"])
+            # `quant` clears the threshold: the project is named sample-quant and its README
+            # describes market data. `backtesting` and `kr-equity` rest on a single README
+            # sentence each, which schema 2 records as "mentioned" rather than promoting to a
+            # project fact. The previous assertions encoded the behaviour that let a
+            # documentation example become a declared domain.
             self.assertIn("quant", context["domains"])
-            self.assertIn("backtesting", context["domains"])
-            self.assertIn("kr-equity", context["domains"])
+            self.assertNotIn("backtesting", context["domains"])
+            self.assertNotIn("kr-equity", context["domains"])
+            self.assertIn("backtesting", context["mentioned"])
+            self.assertIn("kr-equity", context["mentioned"])
             self.assertNotIn(".env", context["detectedDocuments"])
             self.assertNotIn("never-read", json.dumps(context))
             self.assertTrue(output.is_file())

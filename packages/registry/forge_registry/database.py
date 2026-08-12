@@ -706,8 +706,40 @@ class Registry:
                     json.dumps(audit, ensure_ascii=False),
                 ),
             )
+        self._escalate_version_risk(version_id)
         self.connection.commit()
         return len(audits)
+
+    def _escalate_version_risk(self, version_id: int) -> None:
+        """Propagate an external audit verdict onto the version row the policy gate reads.
+
+        Escalate only. A partner audit may raise a version to fail/high, but it can never
+        soften a local static warning into a pass. Without this the gate's hard-block branch
+        is unreachable, because the static auditor emits at most warn/medium and external
+        results previously stopped at the `security_audits` table.
+        """
+        severity = {"pass": 0, "unknown": 1, "warn": 2, "fail": 3}
+        risk_order = {"low": 0, "unknown": 1, "medium": 2, "high": 3}
+        current = self.connection.execute(
+            "SELECT security_status, risk_level FROM skill_versions WHERE id = ?", (version_id,)
+        ).fetchone()
+        if current is None:
+            return
+        status = str(current["security_status"] or "unknown").casefold()
+        risk = str(current["risk_level"] or "unknown").casefold()
+        for audit in self.connection.execute(
+            "SELECT status, risk_level FROM security_audits WHERE skill_version_id = ?", (version_id,)
+        ):
+            candidate_status = str(audit["status"] or "unknown").casefold()
+            candidate_risk = str(audit["risk_level"] or "unknown").casefold()
+            if severity.get(candidate_status, 1) > severity.get(status, 1):
+                status = candidate_status
+            if risk_order.get(candidate_risk, 1) > risk_order.get(risk, 1):
+                risk = candidate_risk
+        self.connection.execute(
+            "UPDATE skill_versions SET security_status = ?, risk_level = ? WHERE id = ?",
+            (status, risk, version_id),
+        )
 
 
 def _safe_snapshot_name(skill_id: str) -> str:

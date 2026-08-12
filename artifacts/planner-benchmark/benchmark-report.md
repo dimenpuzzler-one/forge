@@ -1,6 +1,6 @@
 # Forge planner benchmark
 
-Generated: 2026-08-12T07:06:21.434682Z
+Generated: 2026-08-12T07:56:15.989478Z
 Milestone: Vol.2 V2.1 planner foundation
 
 This benchmark measures the V2.1 planner against an authored fixture catalog. It does not
@@ -37,9 +37,9 @@ difference is attributable to ranking alone.
 
 | Variant | Scenarios | Passed | Role recall | Retrieval ceiling | Ranking gap | Irrelevant rate | Mean admitted | Explanations | Risk gate |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| A-retrieval-only | 12 | 7 | 0.95 | 0.95 | 0.00 | 0.13 | 3.92 | 1.00 | 1.00 |
-| B-stub-lexical | 12 | 8 | 0.95 | 0.95 | 0.00 | 0.12 | 3.75 | 1.00 | 1.00 |
-| C-llm-provider | 12 | 11 | 0.95 | 0.95 | 0.00 | 0.00 | 1.58 | 1.00 | 1.00 |
+| A-retrieval-only | 12 | 7 | 1.00 | 1.00 | 0.00 | 0.15 | 4.17 | 1.00 | 1.00 |
+| B-stub-lexical | 12 | 8 | 1.00 | 1.00 | 0.00 | 0.14 | 3.92 | 1.00 | 1.00 |
+| C-llm-provider | 12 | 12 | 1.00 | 1.00 | 0.00 | 0.00 | 1.58 | 1.00 | 1.00 |
 
 **Role recall** counts required roles covered. **Retrieval ceiling** is the best recall any
 reranker could have reached given what retrieval actually returned. **Ranking gap** is
@@ -72,14 +72,14 @@ role the scenario marks as wrong for the goal; lower is better.
 
 | Scenario | Kind | Recall | Ceiling | Irrelevant | Admitted | Verdict |
 | --- | --- | ---: | ---: | ---: | ---: | --- |
-| S01-landing-conversion-redesign | selection | 0.50 | 0.50 | 0.00 | 4 | Missing required role(s): visual-design (retrieval never surfaced an admissible Skill for: visual-design — this is a retrieval failure, not a ranking failure) |
+| S01-landing-conversion-redesign | selection | 1.00 | 1.00 | 0.17 | 6 | Selected 1 Skill(s) in roles marked irrelevant for this goal: acme/security/auth-architecture (auth) |
 | S02-component-api-boolean-props | selection | 1.00 | 1.00 | 0.00 | 6 | pass |
 | S03-mobile-overflow-touch-targets | selection | 1.00 | 1.00 | 0.00 | 3 | pass |
 | S04-postgres-slow-joins | selection | 1.00 | 1.00 | 0.00 | 3 | pass |
 | S05-add-payment-flow | selection | 1.00 | 1.00 | 0.00 | 2 | pass |
 | S06-documentation-wording | selection | 1.00 | 1.00 | 0.00 | 3 | pass |
 | S07-authentication-architecture | selection | 1.00 | 1.00 | 0.60 | 5 | Selected 3 Skill(s) in roles marked irrelevant for this goal: acme/docs/technical-writing (documentation), acme/perf/frontend-bundle-size (performance), acme/web/component-architecture (component-architecture) |
-| S08-positioning-before-copy | selection | 1.00 | 1.00 | 0.25 | 4 | Selected 1 Skill(s) in roles marked irrelevant for this goal: acme/data/postgres-rls-safety (database-security) |
+| S08-positioning-before-copy | selection | 1.00 | 1.00 | 0.40 | 5 | Selected 2 Skill(s) in roles marked irrelevant for this goal: acme/data/postgres-rls-safety (database-security), acme/quant/backtesting-reproducibility (quant) |
 | S09-e2e-signup-funnel-tests | selection | 1.00 | 1.00 | 0.00 | 3 | pass |
 | S10-bundle-size-load-performance | selection | 1.00 | 1.00 | 0.33 | 6 | Selected 2 Skill(s) in roles marked irrelevant for this goal: acme/docs/technical-writing (documentation), acme/data/postgres-query-performance (database-performance) |
 | S11-rls-before-production-rollout | selection | 1.00 | 1.00 | 0.20 | 5 | Selected 1 Skill(s) in roles marked irrelevant for this goal: acme/marketing/product-marketing-context (positioning) |
@@ -93,7 +93,7 @@ Warnings (not scored as failures):
 
 | Scenario | Kind | Recall | Ceiling | Irrelevant | Admitted | Verdict |
 | --- | --- | ---: | ---: | ---: | ---: | --- |
-| S01-landing-conversion-redesign | selection | 0.50 | 0.50 | 0.00 | 4 | Missing required role(s): visual-design (retrieval never surfaced an admissible Skill for: visual-design — this is a retrieval failure, not a ranking failure) |
+| S01-landing-conversion-redesign | selection | 1.00 | 1.00 | 0.17 | 6 | Selected 1 Skill(s) in roles marked irrelevant for this goal: acme/infra/ci-pipeline (infrastructure) |
 | S02-component-api-boolean-props | selection | 1.00 | 1.00 | 0.00 | 6 | pass |
 | S03-mobile-overflow-touch-targets | selection | 1.00 | 1.00 | 0.00 | 3 | pass |
 | S04-postgres-slow-joins | selection | 1.00 | 1.00 | 0.00 | 3 | pass |
@@ -114,7 +114,7 @@ Warnings (not scored as failures):
 
 | Scenario | Kind | Recall | Ceiling | Irrelevant | Admitted | Verdict |
 | --- | --- | ---: | ---: | ---: | ---: | --- |
-| S01-landing-conversion-redesign | selection | 0.50 | 0.50 | 0.00 | 3 | Missing required role(s): visual-design (retrieval never surfaced an admissible Skill for: visual-design — this is a retrieval failure, not a ranking failure) |
+| S01-landing-conversion-redesign | selection | 1.00 | 1.00 | 0.00 | 3 | pass |
 | S02-component-api-boolean-props | selection | 1.00 | 1.00 | 0.00 | 2 | pass |
 | S03-mobile-overflow-touch-targets | selection | 1.00 | 1.00 | 0.00 | 2 | pass |
 | S04-postgres-slow-joins | selection | 1.00 | 1.00 | 0.00 | 1 | pass |

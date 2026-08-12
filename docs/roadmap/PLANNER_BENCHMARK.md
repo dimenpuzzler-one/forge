@@ -1,9 +1,14 @@
 # Planner benchmark: findings and recommendation
 
 Run date: 2026-08-12
-Scope: Vol.2 V2.1 planner foundation
+Scope: Vol.2 V2.1 planner foundation, updated after V2.1c real-catalog hardening
 Command: `forge benchmark`
 Artifacts: [`artifacts/planner-benchmark/`](../../artifacts/planner-benchmark/)
+
+> **V2.1c status.** All five findings below have been addressed. Jump to
+> [V2.1c hardening results](#v21c-hardening-results) for what changed and what it cost.
+> The findings are retained in their original form because they are the evidence for the
+> fixes, and because F6 and F7 document a failure of the benchmark itself.
 
 This document records what the benchmark measured, what it did not measure, and the
 resulting recommendation. It exists because Vol.2 §40 Risk A — "Forge is slower than a good
@@ -245,22 +250,19 @@ useful to attach.
    trust boundaries; shipping more capability on top of an unreachable block branch inverts
    that.
 
-### Suggested order before V2.2
+### Suggested order before V2.2 — all five completed in V2.1c
 
-1. **F6 — lazy detail fetch for nominated candidates** behind an explicit flag. Highest
-   practical impact by a wide margin. Preserves immutability; removes the manual round trip.
-2. **F7 — separate "uses X" from "mentions X"** in the scanner. Weight code, manifests, and
-   lockfiles above prose, and exclude `tests/fixtures/` and `artifacts/` from signal
-   extraction.
-3. **F1 — make the audit hard block reachable.** Propagate external audit results into
-   `skill_versions`, or have the gate read `security_audits` directly. Add a test that fails
-   if the branch becomes unreachable again.
-4. **F2 — retrieval stemming and a relevance floor.** Re-run and confirm the ceiling rises.
-5. **F3 — an explicit coverage marker** in `plan.md` when no admitted Skill addresses a
-   decomposed role.
+1. ~~**F6** — lazy detail fetch for nominated candidates.~~ Implemented as `--fetch-missing`.
+2. ~~**F7** — separate "uses X" from "mentions X" in the scanner.~~ Implemented as weighted
+   evidence with a `used` / `mentioned` classification.
+3. ~~**F1** — make the audit hard block reachable.~~ External audits now escalate onto
+   `skill_versions`, proven by an integration test through `create_plan`.
+4. ~~**F2** — retrieval stemming and a relevance floor.~~ Ceiling rose from 0.95 to 1.00.
+5. ~~**F3** — an explicit coverage marker.~~ Present in `plan.json` and `plan.md`.
 
-Then reconsider GO V2.2. The precision result is genuine evidence that the reranking stage is
-worth investing in — but only once its inputs and outputs are not being wasted.
+See [V2.1c hardening results](#v21c-hardening-results). Two verifications remain outstanding
+and both need a live environment: a `--fetch-missing` run against the real catalog, and a
+variant C re-run to confirm the precision result survived the retrieval change.
 
 ### What changed the analysis
 
@@ -273,6 +275,103 @@ Two things, and neither came from the fixture:
   scored 6/6 on policy probes and did not surface either one.
 
 A benchmark that only runs on authored fixtures will keep missing this class of defect.
+
+## V2.1c hardening results
+
+Every finding above has a fix, a test, and a measurement.
+
+### F7 — scanner, measured on Forge itself
+
+`scan_project` now weights evidence by where it was found. A dependency in a manifest, an
+actual import, or a technology-specific config file is `used`. A term appearing in prose is
+`mentioned`, recorded with its sources but never used to expand a retrieval query.
+`tests/fixtures/**`, `artifacts/**`, and `.forge/**` contribute nothing at all.
+
+Running `forge scan` inside this repository:
+
+| | before | after |
+| --- | --- | --- |
+| `stack` | `['supabase']` | `[]` |
+| `domains` | `['quant', 'payments', 'ai', 'saas']` | `[]` |
+| `mentioned` | *(did not exist)* | `['ai', 'payments', 'postgres', 'quant', 'saas', 'supabase']` |
+| queries for a landing-page goal | `landing, page, conversion, redesign, supabase, quant, payments, ai` | `landing, page, conversion, redesign, python` |
+
+Three of eight retrieval queries were being spent on domains Forge does not have. None are
+now. `python` survives because `pyproject.toml` is real evidence.
+
+Project context is `schemaVersion: 2`. `stack` and `domains` keep their shape but now contain
+only `used` technologies; `mentioned` and `signals` are additive.
+
+### F2 — retrieval, measured on the fixture
+
+Affix stripping (stdlib, no NLP dependency) plus a relevance floor that prefers candidates
+matching a goal-derived term over ones matching only a project-context term.
+
+| Variant | Retrieval ceiling | Role recall | Irrelevant rate | Mean admitted |
+| --- | ---: | ---: | ---: | ---: |
+| A — retrieval-only | 0.95 → **1.00** | 0.95 → **1.00** | 0.126 → 0.155 | 3.92 → 4.17 |
+| B — stub lexical | 0.95 → **1.00** | 0.95 → **1.00** | 0.121 → 0.136 | 3.75 → 3.92 |
+
+S01, the scenario that exposed F2, went from ceiling 0.50 with `visual-design` unreachable to
+ceiling 1.00 with nothing unreachable.
+
+**This trade is real and should not be glossed.** Better retrieval surfaces more true
+candidates *and* more noise. The two offline variants have no semantic judgment, so their
+irrelevant rate rose by about 2 points as their recall rose by 5. The relevance floor
+absorbed some of it, not all.
+
+The variant that should benefit most is C, which already prunes to 0.000 irrelevant — more
+good candidates with the same pruning ought to be a pure gain. **That is a prediction, not a
+measurement**; variant C has not been re-run since the change, because it needs an API key.
+Re-running it is the first thing to do before trusting this section.
+
+### F6 — lazy detail fetch
+
+`forge plan --fetch-missing` resolves detail for nominated Skills rejected *only* for lacking
+a cached immutable version, then re-runs the gate from scratch. The boundaries are enforced
+in code and covered by tests:
+
+- only ids the deterministic retrieval already produced are eligible, so a provider cannot
+  name an arbitrary Skill and cause a network request;
+- only the `detail-not-cached` rejection code is eligible, so an audit-blocked Skill is never
+  re-fetched for a second opinion;
+- detail is stored through the same `store_detail` path as `forge inspect`, keeping path
+  validation, size limits, hashing, snapshotting, and the static audit;
+- a fetch failure leaves the rejection in place;
+- the budget defaults to 8 and is enforced;
+- risk escalation survives a fetch.
+
+Rejections now carry structured codes (`detail-not-cached`, `audit-blocked`,
+`not-in-candidate-set`, `unknown-skill`, `duplicate-nomination`) so later stages branch on
+the code rather than parsing prose.
+
+**Not yet measured against the live catalog.** The fixture cannot reproduce F6, which is why
+it hid the defect. The real test is a `--fetch-missing` run against skills.sh.
+
+### F1 — audit hard block, now reachable
+
+`store_external_audits` propagates a partner verdict onto `skill_versions`, which is the table
+the gate reads. Escalate only: a partner may raise a version to fail/high, but cannot soften a
+local static warning to a pass. Both directions are tested.
+
+The reachability test goes through `create_plan`, not through the policy function in
+isolation, because the defect was precisely that a correct function was unreachable. It
+asserts the static auditor alone yields `pass`, that the external audit moves it to
+`fail`/`high`, and that the resulting plan admits nothing with code `audit-blocked`.
+
+### F3 — coverage marker
+
+`plan.json` and `plan.md` now state how many decomposed roles the admitted Skills actually
+cover, name the uncovered ones, and attribute each loss to a specific Skill and rejection
+code. An incomplete plan says **"This plan is incomplete"** and "Do not treat the selected
+Skills below as addressing the whole goal." The policy gate is unchanged.
+
+### Known limitation introduced by F2
+
+Affix stripping is naive and produces some non-words: `planner` yields `plann`, and
+`recommendation` yields `commendation` from the `re-` prefix rule. These cost one FTS lookup
+each and match nothing, so the effect is wasted work rather than wrong results. A real stemmer
+would remove them at the cost of a dependency, which is not currently justified.
 
 ## Limits of this benchmark
 

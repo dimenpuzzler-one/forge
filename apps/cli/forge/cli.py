@@ -114,6 +114,14 @@ def build_parser() -> argparse.ArgumentParser:
     )
     plan.add_argument("--model", help="Override the provider model, when the provider supports one.")
     plan.add_argument("--candidates", type=int, default=60, help="FTS candidate ceiling (5-200; default: 60).")
+    plan.add_argument(
+        "--fetch-missing",
+        action="store_true",
+        help="Fetch detail for nominated Skills that lack a cached immutable version, then re-run the gate.",
+    )
+    plan.add_argument(
+        "--fetch-budget", type=int, default=8, help="Maximum Skills to fetch in one plan (1-25; default: 8)."
+    )
 
     benchmark = subcommands.add_parser(
         "benchmark", help="Measure planner selection quality and policy correctness against fixtures."
@@ -555,9 +563,12 @@ def _compose(args: argparse.Namespace) -> int:
 def _plan(args: argparse.Namespace) -> int:
     if not 5 <= args.candidates <= 200:
         raise ValueError("--candidates must be between 5 and 200")
+    if not 1 <= args.fetch_budget <= 25:
+        raise ValueError("--fetch-budget must be between 1 and 25")
     context = scan_project(args.project)
     provider = resolve_provider(args.provider, model=args.model)
     home, registry = _registry(args.forge_home)
+    fetcher = SkillsShAdapter(forge_home=str(home)) if args.fetch_missing else None
     try:
         result = create_plan(
             registry,
@@ -566,6 +577,9 @@ def _plan(args: argparse.Namespace) -> int:
             project_context=context,
             plans_root=home / "plans",
             candidate_limit=args.candidates,
+            detail_fetcher=fetcher,
+            snapshots_root=home / "snapshots",
+            fetch_budget=args.fetch_budget,
         )
     finally:
         registry.close()
@@ -577,10 +591,31 @@ def _plan(args: argparse.Namespace) -> int:
     print(f"Queries: {', '.join(result.queries) or '(none)'}")
     print(f"Retrieved candidates: {result.retrieved}")
     print(f"Risk: {gate.risk} | exploration budget: {gate.exploration_budget:.0%}")
+    if result.fetch_report.enabled:
+        print(
+            f"Detail fetch: fetched_for_plan={len(result.fetch_report.fetched)}, "
+            f"failed={len(result.fetch_report.failed)}, "
+            f"skipped_over_budget={len(result.fetch_report.over_budget)}"
+        )
+        for outcome in result.fetch_report.failed:
+            print(f"  fetch_failed {outcome.skill_id}: {outcome.detail}")
     print(
         f"Policy gate: nominated={len(result.proposal.selected)}, "
         f"admitted={len(gate.admitted)}, rejected={gate.blocked_count}"
     )
+    coverage = result.coverage
+    if coverage.get("unknown"):
+        print("Coverage: the provider proposed no roles, so completeness cannot be assessed.")
+    elif coverage.get("complete"):
+        print(f"Coverage: {len(coverage['coveredRoles'])}/{len(coverage['requiredRoles'])} roles covered.")
+    else:
+        print(
+            f"Coverage: INCOMPLETE — {len(coverage.get('coveredRoles', []))}/"
+            f"{len(coverage.get('requiredRoles', []))} roles covered."
+        )
+        for role in coverage.get("missingRoles", []):
+            lost = coverage.get("lostTo", {}).get(role)
+            print(f"  missing role: {role}" + (f" (lost to: {', '.join(lost)})" if lost else ""))
     if gate.hallucinated_ids:
         print(f"Provider invented {len(gate.hallucinated_ids)} unknown Skill id(s); all were dropped:")
         for skill_id in gate.hallucinated_ids:

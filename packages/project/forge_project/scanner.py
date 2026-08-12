@@ -8,6 +8,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Iterable
 
+from forge_project.signals import collect_signals, mentioned, used
+
 
 README_PATTERN = re.compile(r"^README(?:[_-].*)?(?:\..*)?$", re.IGNORECASE)
 DOCUMENT_NAMES = {"AGENTS.md", "CLAUDE.md", "pyproject.toml", "package.json", "turbo.json", "pnpm-workspace.yaml"}
@@ -151,44 +153,6 @@ def _load_json(path: Path) -> dict[str, object]:
     return value if isinstance(value, dict) else {}
 
 
-def _detect_stack(root: Path, document_text: str) -> list[str]:
-    package_json = _load_json(root / "package.json") if (root / "package.json").is_file() else {}
-    dependencies = {
-        str(name).casefold()
-        for group in (package_json.get("dependencies", {}), package_json.get("devDependencies", {}))
-        if isinstance(group, dict)
-        for name in group
-    }
-    corpus = document_text.casefold()
-    stack: list[str] = []
-    if "next" in dependencies or "next.js" in corpus:
-        stack.append("nextjs")
-    if "react" in dependencies:
-        stack.append("react")
-    if "supabase" in dependencies or "supabase" in corpus:
-        stack.append("supabase")
-    if (root / "turbo.json").exists() or "turbo" in dependencies:
-        stack.append("turborepo")
-    if "fastapi" in corpus:
-        stack.append("fastapi")
-    if "django" in corpus:
-        stack.append("django")
-    return stack
-
-
-def _detect_domains(root: Path, text: str) -> list[str]:
-    corpus = f"{root.name} {text}".casefold()
-    signals = {
-        "quant": ("quant", "trading", "equity", "futures", "market"),
-        "backtesting": ("backtest", "walk-forward", "monte carlo"),
-        "kr-equity": ("korea stock", "한국주식", "creon"),
-        "payments": ("payment", "결제", "ksnet", "stripe"),
-        "ai": ("openai", "llm", "structured output", "agent"),
-        "saas": ("saas", "subscription", "multi-tenant"),
-    }
-    return [domain for domain, terms in signals.items() if any(term in corpus for term in terms)]
-
-
 def _detect_architecture(text: str) -> list[str]:
     corpus = text.casefold()
     patterns = {
@@ -248,13 +212,25 @@ def scan_project(path: str | Path | None = None, *, cwd: str | Path | None = Non
 
     corpus = "\n".join(text_parts)
     languages = _detect_languages(root)
+    readme_relative = representative.relative_to(root).as_posix() if representative is not None else None
+    signals = collect_signals(
+        root,
+        documents=[
+            (path.relative_to(root).as_posix(), text) for path, text in zip(documents, text_parts)
+        ],
+        readme_relative=readme_relative,
+    )
     return {
-        "schemaVersion": 1,
+        # Schema 2 narrows `stack` and `domains` to technologies with strong evidence and adds
+        # `signals` with the full evidence trail. A prose mention no longer becomes a project fact.
+        "schemaVersion": 2,
         "name": root.name,
         "root": str(root),
         "languages": languages,
-        "stack": _detect_stack(root, corpus),
-        "domains": _detect_domains(root, corpus),
+        "stack": used(signals, "stack"),
+        "domains": used(signals, "domain"),
+        "mentioned": mentioned(signals),
+        "signals": [signal.as_dict() for signal in sorted(signals, key=lambda item: item.technology)],
         "architecture": _detect_architecture(corpus),
         "commands": _detect_test_commands(root, languages),
         "detectedDocuments": [path.relative_to(root).as_posix() for path in documents],
