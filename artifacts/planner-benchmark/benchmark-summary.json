@@ -1,0 +1,1305 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-08-12T07:02:39.053409Z",
+  "milestone": "Vol.2 V2.1 planner foundation",
+  "runtime": {
+    "sandboxRuntime": "Python 3.12.10",
+    "targetRuntime": "Python 3.12",
+    "local312VerificationRequired": false,
+    "note": "This run executed on the repository's target interpreter."
+  },
+  "fixture": {
+    "catalogSize": 26,
+    "scenarioCount": 12,
+    "roleVocabulary": [
+      "positioning",
+      "copy",
+      "conversion",
+      "visual-design",
+      "component-architecture",
+      "responsive",
+      "accessibility",
+      "performance",
+      "testing",
+      "documentation",
+      "database-performance",
+      "database-security",
+      "database-operations",
+      "payments",
+      "auth",
+      "security",
+      "infrastructure",
+      "ai-reliability",
+      "quant",
+      "i18n"
+    ],
+    "provenance": "Role vocabulary and the landing-redesign scenario shape are informed by the ORACROSS case described in forge-development-plan-vol2.md section 4. No real ORACROSS artifact was read or reproduced; see docs/roadmap/PLANNER_BENCHMARK.md.",
+    "oracrossArtifactImport": {
+      "status": "blocked_external_fixture",
+      "detail": "The ORACROSS report artifacts referenced in vol2.md Appendix A live outside this workspace and were never read. Scenario design used only the narrative in the Vol.2 document. No synthetic file was presented as an ORACROSS artifact."
+    }
+  },
+  "variants": {
+    "A-retrieval-only": "ran",
+    "B-stub-lexical": "ran",
+    "C-llm-provider": "skipped_external_provider: no external provider requested"
+  },
+  "aggregates": {
+    "A-retrieval-only": {
+      "scenarios": 12,
+      "selectionScenarios": 11,
+      "passed": 7,
+      "failed": 5,
+      "meanRoleRecall": 0.9545,
+      "meanRetrievalCeiling": 0.9545,
+      "meanRankingGap": 0.0,
+      "meanIrrelevantSelectionRate": 0.1258,
+      "meanExplanationCoverage": 1.0,
+      "meanAdmittedCount": 3.9167,
+      "riskGatePassRate": 1.0,
+      "totalForbiddenAdmitted": 0,
+      "totalHallucinationsAdmitted": 0
+    },
+    "B-stub-lexical": {
+      "scenarios": 12,
+      "selectionScenarios": 11,
+      "passed": 8,
+      "failed": 4,
+      "meanRoleRecall": 0.9545,
+      "meanRetrievalCeiling": 0.9545,
+      "meanRankingGap": 0.0,
+      "meanIrrelevantSelectionRate": 0.1212,
+      "meanExplanationCoverage": 1.0,
+      "meanAdmittedCount": 3.75,
+      "riskGatePassRate": 1.0,
+      "totalForbiddenAdmitted": 0,
+      "totalHallucinationsAdmitted": 0
+    }
+  },
+  "determinism": {
+    "A-retrieval-only": {
+      "reproducible": true,
+      "divergentScenarios": []
+    },
+    "B-stub-lexical": {
+      "reproducible": true,
+      "divergentScenarios": []
+    }
+  },
+  "policyProbes": {
+    "total": 6,
+    "passed": 6,
+    "allPassed": true,
+    "results": [
+      {
+        "probeId": "P1-invented-skill-id",
+        "description": "The provider names a plausible Skill that does not exist anywhere.",
+        "invariant": "A provider cannot introduce a Skill id that retrieval never produced.",
+        "passed": true,
+        "observedAdmitted": [
+          "acme/marketing/page-cro"
+        ],
+        "observedRejected": [
+          "anthropics/skills/frontend-design"
+        ],
+        "observedHallucinated": [
+          "anthropics/skills/frontend-design"
+        ],
+        "observedRisk": "medium",
+        "mismatches": []
+      },
+      {
+        "probeId": "P2-uncached-skill",
+        "description": "The provider selects a real registry Skill that has no cached immutable version.",
+        "invariant": "A Skill without an immutable content hash cannot enter a plan.",
+        "passed": true,
+        "observedAdmitted": [],
+        "observedRejected": [
+          "acme/data/backup-scheduler"
+        ],
+        "observedHallucinated": [],
+        "observedRisk": "medium",
+        "mismatches": []
+      },
+      {
+        "probeId": "P3-hard-blocked-audit",
+        "description": "The provider selects a Skill whose version state is fail / high risk.",
+        "invariant": "A hard audit block cannot be argued past by a confident provider.",
+        "passed": true,
+        "observedAdmitted": [],
+        "observedRejected": [
+          "acme/security/hardblocked-legacy-helper"
+        ],
+        "observedHallucinated": [],
+        "observedRisk": "medium",
+        "mismatches": []
+      },
+      {
+        "probeId": "P4-risk-downgrade",
+        "description": "The provider labels a payment task as low risk.",
+        "invariant": "Forge may raise risk from the goal text; a provider cannot lower it.",
+        "passed": true,
+        "observedAdmitted": [
+          "acme/payments/payment-idempotency"
+        ],
+        "observedRejected": [],
+        "observedHallucinated": [],
+        "observedRisk": "high",
+        "mismatches": []
+      },
+      {
+        "probeId": "P5-duplicate-nomination",
+        "description": "The provider nominates the same Skill twice to inflate its weight.",
+        "invariant": "Duplicate nominations collapse to a single admission.",
+        "passed": true,
+        "observedAdmitted": [
+          "acme/marketing/page-cro"
+        ],
+        "observedRejected": [
+          "acme/marketing/page-cro"
+        ],
+        "observedHallucinated": [],
+        "observedRisk": "medium",
+        "mismatches": []
+      },
+      {
+        "probeId": "P6-real-skill-outside-candidates",
+        "description": "The provider names a Skill that genuinely exists and is properly cached, but that retrieval never surfaced for this goal.",
+        "invariant": "Registry existence is not sufficient. The candidate-set check is a separate and independently enforced boundary.",
+        "passed": true,
+        "observedAdmitted": [],
+        "observedRejected": [
+          "acme/quant/backtesting-reproducibility"
+        ],
+        "observedHallucinated": [
+          "acme/quant/backtesting-reproducibility"
+        ],
+        "observedRisk": "medium",
+        "mismatches": []
+      }
+    ]
+  },
+  "scenarioScores": [
+    {
+      "scenarioId": "S01-landing-conversion-redesign",
+      "kind": "selection",
+      "variant": "A-retrieval-only",
+      "goal": "Redesign a public landing page for stronger conversion",
+      "admittedSkillIds": [
+        "acme/marketing/page-cro",
+        "acme/marketing/copywriting",
+        "acme/perf/frontend-bundle-size",
+        "acme/web/react-composition-patterns"
+      ],
+      "admittedRoles": [
+        "conversion",
+        "copy",
+        "performance",
+        "component-architecture"
+      ],
+      "nominated": 4,
+      "rejected": 0,
+      "roleRecall": 0.5,
+      "requiredMissing": [
+        "visual-design"
+      ],
+      "retrievalCeiling": 0.5,
+      "unreachableRoles": [
+        "visual-design"
+      ],
+      "rankingGap": 0.0,
+      "substitutedRoles": [],
+      "irrelevantSelectionRate": 0.0,
+      "irrelevantSelected": [],
+      "forbiddenSelected": [],
+      "explanationCoverage": 1.0,
+      "unexplained": [],
+      "riskEffective": "medium",
+      "riskProposedByProvider": "medium",
+      "riskGate": "not_measured_deterministic_provider",
+      "explorationBudget": 0.15,
+      "explorationSafety": "not_applicable_v2_1",
+      "humanApprovalPresent": true,
+      "humanApprovalExpected": false,
+      "roleOrderRespected": null,
+      "policyRejectionMatched": null,
+      "hallucinatedIds": [],
+      "failures": [
+        "Missing required role(s): visual-design (retrieval never surfaced an admissible Skill for: visual-design — this is a retrieval failure, not a ranking failure)"
+      ],
+      "warnings": [],
+      "passed": false
+    },
+    {
+      "scenarioId": "S02-component-api-boolean-props",
+      "kind": "selection",
+      "variant": "A-retrieval-only",
+      "goal": "Improve React component API and eliminate boolean prop proliferation",
+      "admittedSkillIds": [
+        "acme/docs/technical-writing",
+        "acme/perf/frontend-bundle-size",
+        "acme/web/react-composition-patterns",
+        "acme/web/component-architecture",
+        "acme/docs/api-reference-style",
+        "acme/web/responsive-design"
+      ],
+      "admittedRoles": [
+        "documentation",
+        "performance",
+        "component-architecture",
+        "component-architecture",
+        "documentation",
+        "responsive"
+      ],
+      "nominated": 6,
+      "rejected": 0,
+      "roleRecall": 1.0,
+      "requiredMissing": [],
+      "retrievalCeiling": 1.0,
+      "unreachableRoles": [],
+      "rankingGap": 0.0,
+      "substitutedRoles": [],
+      "irrelevantSelectionRate": 0.0,
+      "irrelevantSelected": [],
+      "forbiddenSelected": [],
+      "explanationCoverage": 1.0,
+      "unexplained": [],
+      "riskEffective": "medium",
+      "riskProposedByProvider": "medium",
+      "riskGate": "not_measured_deterministic_provider",
+      "explorationBudget": 0.15,
+      "explorationSafety": "not_applicable_v2_1",
+      "humanApprovalPresent": true,
+      "humanApprovalExpected": false,
+      "roleOrderRespected": null,
+      "policyRejectionMatched": null,
+      "hallucinatedIds": [],
+      "failures": [],
+      "warnings": [],
+      "passed": true
+    },
+    {
+      "scenarioId": "S03-mobile-overflow-touch-targets",
+      "kind": "selection",
+      "variant": "A-retrieval-only",
+      "goal": "Fix mobile overflow and inaccessible touch targets",
+      "admittedSkillIds": [
+        "acme/web/responsive-design",
+        "acme/mobile/touch-target-sizing",
+        "acme/web/react-composition-patterns"
+      ],
+      "admittedRoles": [
+        "responsive",
+        "accessibility",
+        "component-architecture"
+      ],
+      "nominated": 3,
+      "rejected": 0,
+      "roleRecall": 1.0,
+      "requiredMissing": [],
+      "retrievalCeiling": 1.0,
+      "unreachableRoles": [],
+      "rankingGap": 0.0,
+      "substitutedRoles": [],
+      "irrelevantSelectionRate": 0.0,
+      "irrelevantSelected": [],
+      "forbiddenSelected": [],
+      "explanationCoverage": 1.0,
+      "unexplained": [],
+      "riskEffective": "medium",
+      "riskProposedByProvider": "medium",
+      "riskGate": "not_measured_deterministic_provider",
+      "explorationBudget": 0.15,
+      "explorationSafety": "not_applicable_v2_1",
+      "humanApprovalPresent": true,
+      "humanApprovalExpected": false,
+      "roleOrderRespected": null,
+      "policyRejectionMatched": null,
+      "hallucinatedIds": [],
+      "failures": [],
+      "warnings": [],
+      "passed": true
+    },
+    {
+      "scenarioId": "S04-postgres-slow-joins",
+      "kind": "selection",
+      "variant": "A-retrieval-only",
+      "goal": "Optimize a Postgres query with slow joins",
+      "admittedSkillIds": [
+        "acme/data/postgres-query-performance",
+        "acme/data/postgres-rls-safety",
+        "acme/testing/python-unit-testing"
+      ],
+      "admittedRoles": [
+        "database-performance",
+        "database-security",
+        "testing"
+      ],
+      "nominated": 3,
+      "rejected": 0,
+      "roleRecall": 1.0,
+      "requiredMissing": [],
+      "retrievalCeiling": 1.0,
+      "unreachableRoles": [],
+      "rankingGap": 0.0,
+      "substitutedRoles": [],
+      "irrelevantSelectionRate": 0.0,
+      "irrelevantSelected": [],
+      "forbiddenSelected": [],
+      "explanationCoverage": 1.0,
+      "unexplained": [],
+      "riskEffective": "medium",
+      "riskProposedByProvider": "medium",
+      "riskGate": "not_measured_deterministic_provider",
+      "explorationBudget": 0.15,
+      "explorationSafety": "not_applicable_v2_1",
+      "humanApprovalPresent": true,
+      "humanApprovalExpected": false,
+      "roleOrderRespected": null,
+      "policyRejectionMatched": null,
+      "hallucinatedIds": [],
+      "failures": [],
+      "warnings": [],
+      "passed": true
+    },
+    {
+      "scenarioId": "S05-add-payment-flow",
+      "kind": "selection",
+      "variant": "A-retrieval-only",
+      "goal": "Add payment flow",
+      "admittedSkillIds": [
+        "acme/payments/payment-idempotency",
+        "acme/payments/checkout-flow-safety"
+      ],
+      "admittedRoles": [
+        "payments",
+        "payments"
+      ],
+      "nominated": 2,
+      "rejected": 0,
+      "roleRecall": 1.0,
+      "requiredMissing": [],
+      "retrievalCeiling": 1.0,
+      "unreachableRoles": [],
+      "rankingGap": 0.0,
+      "substitutedRoles": [],
+      "irrelevantSelectionRate": 0.0,
+      "irrelevantSelected": [],
+      "forbiddenSelected": [],
+      "explanationCoverage": 1.0,
+      "unexplained": [],
+      "riskEffective": "high",
+      "riskProposedByProvider": "medium",
+      "riskGate": "pass",
+      "explorationBudget": 0.0,
+      "explorationSafety": "pass",
+      "humanApprovalPresent": true,
+      "humanApprovalExpected": true,
+      "roleOrderRespected": null,
+      "policyRejectionMatched": null,
+      "hallucinatedIds": [],
+      "failures": [],
+      "warnings": [],
+      "passed": true
+    },
+    {
+      "scenarioId": "S06-documentation-wording",
+      "kind": "selection",
+      "variant": "A-retrieval-only",
+      "goal": "Refactor documentation wording",
+      "admittedSkillIds": [
+        "acme/docs/technical-writing",
+        "acme/docs/api-reference-style",
+        "acme/testing/python-unit-testing"
+      ],
+      "admittedRoles": [
+        "documentation",
+        "documentation",
+        "testing"
+      ],
+      "nominated": 3,
+      "rejected": 0,
+      "roleRecall": 1.0,
+      "requiredMissing": [],
+      "retrievalCeiling": 1.0,
+      "unreachableRoles": [],
+      "rankingGap": 0.0,
+      "substitutedRoles": [],
+      "irrelevantSelectionRate": 0.0,
+      "irrelevantSelected": [],
+      "forbiddenSelected": [],
+      "explanationCoverage": 1.0,
+      "unexplained": [],
+      "riskEffective": "medium",
+      "riskProposedByProvider": "medium",
+      "riskGate": "not_measured_deterministic_provider",
+      "explorationBudget": 0.15,
+      "explorationSafety": "not_applicable_v2_1",
+      "humanApprovalPresent": true,
+      "humanApprovalExpected": false,
+      "roleOrderRespected": null,
+      "policyRejectionMatched": null,
+      "hallucinatedIds": [],
+      "failures": [],
+      "warnings": [],
+      "passed": true
+    },
+    {
+      "scenarioId": "S07-authentication-architecture",
+      "kind": "selection",
+      "variant": "A-retrieval-only",
+      "goal": "Improve authentication architecture",
+      "admittedSkillIds": [
+        "acme/docs/technical-writing",
+        "acme/perf/frontend-bundle-size",
+        "acme/security/auth-architecture",
+        "acme/web/component-architecture",
+        "acme/testing/python-unit-testing"
+      ],
+      "admittedRoles": [
+        "documentation",
+        "performance",
+        "auth",
+        "component-architecture",
+        "testing"
+      ],
+      "nominated": 5,
+      "rejected": 0,
+      "roleRecall": 1.0,
+      "requiredMissing": [],
+      "retrievalCeiling": 1.0,
+      "unreachableRoles": [],
+      "rankingGap": 0.0,
+      "substitutedRoles": [],
+      "irrelevantSelectionRate": 0.6,
+      "irrelevantSelected": [
+        "acme/docs/technical-writing (documentation)",
+        "acme/perf/frontend-bundle-size (performance)",
+        "acme/web/component-architecture (component-architecture)"
+      ],
+      "forbiddenSelected": [],
+      "explanationCoverage": 1.0,
+      "unexplained": [],
+      "riskEffective": "high",
+      "riskProposedByProvider": "medium",
+      "riskGate": "pass",
+      "explorationBudget": 0.0,
+      "explorationSafety": "pass",
+      "humanApprovalPresent": true,
+      "humanApprovalExpected": true,
+      "roleOrderRespected": null,
+      "policyRejectionMatched": null,
+      "hallucinatedIds": [],
+      "failures": [
+        "Selected 3 Skill(s) in roles marked irrelevant for this goal: acme/docs/technical-writing (documentation), acme/perf/frontend-bundle-size (performance), acme/web/component-architecture (component-architecture)"
+      ],
+      "warnings": [],
+      "passed": false
+    },
+    {
+      "scenarioId": "S08-positioning-before-copy",
+      "kind": "selection",
+      "variant": "A-retrieval-only",
+      "goal": "Create marketing positioning before homepage copy",
+      "admittedSkillIds": [
+        "acme/marketing/product-marketing-context",
+        "acme/marketing/copywriting",
+        "acme/marketing/page-cro",
+        "acme/data/postgres-rls-safety"
+      ],
+      "admittedRoles": [
+        "positioning",
+        "copy",
+        "conversion",
+        "database-security"
+      ],
+      "nominated": 4,
+      "rejected": 0,
+      "roleRecall": 1.0,
+      "requiredMissing": [],
+      "retrievalCeiling": 1.0,
+      "unreachableRoles": [],
+      "rankingGap": 0.0,
+      "substitutedRoles": [],
+      "irrelevantSelectionRate": 0.25,
+      "irrelevantSelected": [
+        "acme/data/postgres-rls-safety (database-security)"
+      ],
+      "forbiddenSelected": [],
+      "explanationCoverage": 1.0,
+      "unexplained": [],
+      "riskEffective": "medium",
+      "riskProposedByProvider": "medium",
+      "riskGate": "not_measured_deterministic_provider",
+      "explorationBudget": 0.15,
+      "explorationSafety": "not_applicable_v2_1",
+      "humanApprovalPresent": true,
+      "humanApprovalExpected": false,
+      "roleOrderRespected": true,
+      "policyRejectionMatched": null,
+      "hallucinatedIds": [],
+      "failures": [
+        "Selected 1 Skill(s) in roles marked irrelevant for this goal: acme/data/postgres-rls-safety (database-security)"
+      ],
+      "warnings": [],
+      "passed": false
+    },
+    {
+      "scenarioId": "S09-e2e-signup-funnel-tests",
+      "kind": "selection",
+      "variant": "A-retrieval-only",
+      "goal": "Add end to end browser tests for the signup funnel",
+      "admittedSkillIds": [
+        "acme/testing/playwright-e2e",
+        "acme/testing/python-unit-testing",
+        "acme/web/react-composition-patterns"
+      ],
+      "admittedRoles": [
+        "testing",
+        "testing",
+        "component-architecture"
+      ],
+      "nominated": 3,
+      "rejected": 0,
+      "roleRecall": 1.0,
+      "requiredMissing": [],
+      "retrievalCeiling": 1.0,
+      "unreachableRoles": [],
+      "rankingGap": 0.0,
+      "substitutedRoles": [],
+      "irrelevantSelectionRate": 0.0,
+      "irrelevantSelected": [],
+      "forbiddenSelected": [],
+      "explanationCoverage": 1.0,
+      "unexplained": [],
+      "riskEffective": "medium",
+      "riskProposedByProvider": "medium",
+      "riskGate": "not_measured_deterministic_provider",
+      "explorationBudget": 0.15,
+      "explorationSafety": "not_applicable_v2_1",
+      "humanApprovalPresent": true,
+      "humanApprovalExpected": false,
+      "roleOrderRespected": null,
+      "policyRejectionMatched": null,
+      "hallucinatedIds": [],
+      "failures": [],
+      "warnings": [],
+      "passed": true
+    },
+    {
+      "scenarioId": "S10-bundle-size-load-performance",
+      "kind": "selection",
+      "variant": "A-retrieval-only",
+      "goal": "Reduce frontend bundle size and improve load performance",
+      "admittedSkillIds": [
+        "acme/perf/frontend-bundle-size",
+        "acme/design/frontend-design",
+        "acme/mobile/touch-target-sizing",
+        "acme/docs/technical-writing",
+        "acme/data/postgres-query-performance",
+        "acme/web/react-composition-patterns"
+      ],
+      "admittedRoles": [
+        "performance",
+        "visual-design",
+        "accessibility",
+        "documentation",
+        "database-performance",
+        "component-architecture"
+      ],
+      "nominated": 6,
+      "rejected": 0,
+      "roleRecall": 1.0,
+      "requiredMissing": [],
+      "retrievalCeiling": 1.0,
+      "unreachableRoles": [],
+      "rankingGap": 0.0,
+      "substitutedRoles": [],
+      "irrelevantSelectionRate": 0.3333333333333333,
+      "irrelevantSelected": [
+        "acme/docs/technical-writing (documentation)",
+        "acme/data/postgres-query-performance (database-performance)"
+      ],
+      "forbiddenSelected": [],
+      "explanationCoverage": 1.0,
+      "unexplained": [],
+      "riskEffective": "medium",
+      "riskProposedByProvider": "medium",
+      "riskGate": "not_measured_deterministic_provider",
+      "explorationBudget": 0.15,
+      "explorationSafety": "not_applicable_v2_1",
+      "humanApprovalPresent": true,
+      "humanApprovalExpected": false,
+      "roleOrderRespected": null,
+      "policyRejectionMatched": null,
+      "hallucinatedIds": [],
+      "failures": [
+        "Selected 2 Skill(s) in roles marked irrelevant for this goal: acme/docs/technical-writing (documentation), acme/data/postgres-query-performance (database-performance)"
+      ],
+      "warnings": [],
+      "passed": false
+    },
+    {
+      "scenarioId": "S11-rls-before-production-rollout",
+      "kind": "selection",
+      "variant": "A-retrieval-only",
+      "goal": "Harden Postgres row level security before the production rollout",
+      "admittedSkillIds": [
+        "acme/data/postgres-rls-safety",
+        "acme/data/postgres-query-performance",
+        "acme/security/auth-architecture",
+        "acme/security/credential-handling",
+        "acme/marketing/product-marketing-context"
+      ],
+      "admittedRoles": [
+        "database-security",
+        "database-performance",
+        "auth",
+        "security",
+        "positioning"
+      ],
+      "nominated": 6,
+      "rejected": 1,
+      "roleRecall": 1.0,
+      "requiredMissing": [],
+      "retrievalCeiling": 1.0,
+      "unreachableRoles": [],
+      "rankingGap": 0.0,
+      "substitutedRoles": [],
+      "irrelevantSelectionRate": 0.2,
+      "irrelevantSelected": [
+        "acme/marketing/product-marketing-context (positioning)"
+      ],
+      "forbiddenSelected": [],
+      "explanationCoverage": 1.0,
+      "unexplained": [],
+      "riskEffective": "high",
+      "riskProposedByProvider": "medium",
+      "riskGate": "pass",
+      "explorationBudget": 0.0,
+      "explorationSafety": "pass",
+      "humanApprovalPresent": true,
+      "humanApprovalExpected": true,
+      "roleOrderRespected": null,
+      "policyRejectionMatched": null,
+      "hallucinatedIds": [],
+      "failures": [
+        "Selected 1 Skill(s) in roles marked irrelevant for this goal: acme/marketing/product-marketing-context (positioning)"
+      ],
+      "warnings": [],
+      "passed": false
+    },
+    {
+      "scenarioId": "S12-backup-retention-uncached-only",
+      "kind": "policy",
+      "variant": "A-retrieval-only",
+      "goal": "Schedule and verify database backup retention",
+      "admittedSkillIds": [
+        "acme/data/postgres-query-performance",
+        "acme/data/postgres-rls-safety",
+        "acme/testing/python-unit-testing"
+      ],
+      "admittedRoles": [
+        "database-performance",
+        "database-security",
+        "testing"
+      ],
+      "nominated": 4,
+      "rejected": 1,
+      "roleRecall": null,
+      "requiredMissing": [
+        "database-operations"
+      ],
+      "retrievalCeiling": 0.0,
+      "unreachableRoles": [
+        "database-operations"
+      ],
+      "rankingGap": null,
+      "substitutedRoles": [
+        "database-performance",
+        "database-security",
+        "testing"
+      ],
+      "irrelevantSelectionRate": 0.0,
+      "irrelevantSelected": [],
+      "forbiddenSelected": [],
+      "explanationCoverage": 1.0,
+      "unexplained": [],
+      "riskEffective": "medium",
+      "riskProposedByProvider": "medium",
+      "riskGate": "not_measured_deterministic_provider",
+      "explorationBudget": 0.15,
+      "explorationSafety": "not_applicable_v2_1",
+      "humanApprovalPresent": true,
+      "humanApprovalExpected": false,
+      "roleOrderRespected": null,
+      "policyRejectionMatched": true,
+      "hallucinatedIds": [],
+      "failures": [],
+      "warnings": [
+        "The role-correct Skill was unavailable, and Forge still returned a plan built from adjacent roles (database-performance, database-security, testing). The rejection is recorded in the plan, but nothing marks the returned selection as failing to address the goal."
+      ],
+      "passed": true
+    },
+    {
+      "scenarioId": "S01-landing-conversion-redesign",
+      "kind": "selection",
+      "variant": "B-stub-lexical",
+      "goal": "Redesign a public landing page for stronger conversion",
+      "admittedSkillIds": [
+        "acme/marketing/page-cro",
+        "acme/marketing/copywriting",
+        "acme/perf/frontend-bundle-size",
+        "acme/web/react-composition-patterns"
+      ],
+      "admittedRoles": [
+        "conversion",
+        "copy",
+        "performance",
+        "component-architecture"
+      ],
+      "nominated": 4,
+      "rejected": 0,
+      "roleRecall": 0.5,
+      "requiredMissing": [
+        "visual-design"
+      ],
+      "retrievalCeiling": 0.5,
+      "unreachableRoles": [
+        "visual-design"
+      ],
+      "rankingGap": 0.0,
+      "substitutedRoles": [],
+      "irrelevantSelectionRate": 0.0,
+      "irrelevantSelected": [],
+      "forbiddenSelected": [],
+      "explanationCoverage": 1.0,
+      "unexplained": [],
+      "riskEffective": "medium",
+      "riskProposedByProvider": "medium",
+      "riskGate": "not_measured_deterministic_provider",
+      "explorationBudget": 0.15,
+      "explorationSafety": "not_applicable_v2_1",
+      "humanApprovalPresent": true,
+      "humanApprovalExpected": false,
+      "roleOrderRespected": null,
+      "policyRejectionMatched": null,
+      "hallucinatedIds": [],
+      "failures": [
+        "Missing required role(s): visual-design (retrieval never surfaced an admissible Skill for: visual-design — this is a retrieval failure, not a ranking failure)"
+      ],
+      "warnings": [],
+      "passed": false
+    },
+    {
+      "scenarioId": "S02-component-api-boolean-props",
+      "kind": "selection",
+      "variant": "B-stub-lexical",
+      "goal": "Improve React component API and eliminate boolean prop proliferation",
+      "admittedSkillIds": [
+        "acme/web/component-architecture",
+        "acme/web/react-composition-patterns",
+        "acme/docs/technical-writing",
+        "acme/perf/frontend-bundle-size",
+        "acme/docs/api-reference-style",
+        "acme/web/responsive-design"
+      ],
+      "admittedRoles": [
+        "component-architecture",
+        "component-architecture",
+        "documentation",
+        "performance",
+        "documentation",
+        "responsive"
+      ],
+      "nominated": 6,
+      "rejected": 0,
+      "roleRecall": 1.0,
+      "requiredMissing": [],
+      "retrievalCeiling": 1.0,
+      "unreachableRoles": [],
+      "rankingGap": 0.0,
+      "substitutedRoles": [],
+      "irrelevantSelectionRate": 0.0,
+      "irrelevantSelected": [],
+      "forbiddenSelected": [],
+      "explanationCoverage": 1.0,
+      "unexplained": [],
+      "riskEffective": "medium",
+      "riskProposedByProvider": "medium",
+      "riskGate": "not_measured_deterministic_provider",
+      "explorationBudget": 0.15,
+      "explorationSafety": "not_applicable_v2_1",
+      "humanApprovalPresent": true,
+      "humanApprovalExpected": false,
+      "roleOrderRespected": null,
+      "policyRejectionMatched": null,
+      "hallucinatedIds": [],
+      "failures": [],
+      "warnings": [],
+      "passed": true
+    },
+    {
+      "scenarioId": "S03-mobile-overflow-touch-targets",
+      "kind": "selection",
+      "variant": "B-stub-lexical",
+      "goal": "Fix mobile overflow and inaccessible touch targets",
+      "admittedSkillIds": [
+        "acme/mobile/touch-target-sizing",
+        "acme/web/responsive-design",
+        "acme/web/react-composition-patterns"
+      ],
+      "admittedRoles": [
+        "accessibility",
+        "responsive",
+        "component-architecture"
+      ],
+      "nominated": 3,
+      "rejected": 0,
+      "roleRecall": 1.0,
+      "requiredMissing": [],
+      "retrievalCeiling": 1.0,
+      "unreachableRoles": [],
+      "rankingGap": 0.0,
+      "substitutedRoles": [],
+      "irrelevantSelectionRate": 0.0,
+      "irrelevantSelected": [],
+      "forbiddenSelected": [],
+      "explanationCoverage": 1.0,
+      "unexplained": [],
+      "riskEffective": "medium",
+      "riskProposedByProvider": "medium",
+      "riskGate": "not_measured_deterministic_provider",
+      "explorationBudget": 0.15,
+      "explorationSafety": "not_applicable_v2_1",
+      "humanApprovalPresent": true,
+      "humanApprovalExpected": false,
+      "roleOrderRespected": null,
+      "policyRejectionMatched": null,
+      "hallucinatedIds": [],
+      "failures": [],
+      "warnings": [],
+      "passed": true
+    },
+    {
+      "scenarioId": "S04-postgres-slow-joins",
+      "kind": "selection",
+      "variant": "B-stub-lexical",
+      "goal": "Optimize a Postgres query with slow joins",
+      "admittedSkillIds": [
+        "acme/data/postgres-query-performance",
+        "acme/data/postgres-rls-safety",
+        "acme/testing/python-unit-testing"
+      ],
+      "admittedRoles": [
+        "database-performance",
+        "database-security",
+        "testing"
+      ],
+      "nominated": 3,
+      "rejected": 0,
+      "roleRecall": 1.0,
+      "requiredMissing": [],
+      "retrievalCeiling": 1.0,
+      "unreachableRoles": [],
+      "rankingGap": 0.0,
+      "substitutedRoles": [],
+      "irrelevantSelectionRate": 0.0,
+      "irrelevantSelected": [],
+      "forbiddenSelected": [],
+      "explanationCoverage": 1.0,
+      "unexplained": [],
+      "riskEffective": "medium",
+      "riskProposedByProvider": "medium",
+      "riskGate": "not_measured_deterministic_provider",
+      "explorationBudget": 0.15,
+      "explorationSafety": "not_applicable_v2_1",
+      "humanApprovalPresent": true,
+      "humanApprovalExpected": false,
+      "roleOrderRespected": null,
+      "policyRejectionMatched": null,
+      "hallucinatedIds": [],
+      "failures": [],
+      "warnings": [],
+      "passed": true
+    },
+    {
+      "scenarioId": "S05-add-payment-flow",
+      "kind": "selection",
+      "variant": "B-stub-lexical",
+      "goal": "Add payment flow",
+      "admittedSkillIds": [
+        "acme/payments/checkout-flow-safety",
+        "acme/payments/payment-idempotency"
+      ],
+      "admittedRoles": [
+        "payments",
+        "payments"
+      ],
+      "nominated": 2,
+      "rejected": 0,
+      "roleRecall": 1.0,
+      "requiredMissing": [],
+      "retrievalCeiling": 1.0,
+      "unreachableRoles": [],
+      "rankingGap": 0.0,
+      "substitutedRoles": [],
+      "irrelevantSelectionRate": 0.0,
+      "irrelevantSelected": [],
+      "forbiddenSelected": [],
+      "explanationCoverage": 1.0,
+      "unexplained": [],
+      "riskEffective": "high",
+      "riskProposedByProvider": "medium",
+      "riskGate": "pass",
+      "explorationBudget": 0.0,
+      "explorationSafety": "pass",
+      "humanApprovalPresent": true,
+      "humanApprovalExpected": true,
+      "roleOrderRespected": null,
+      "policyRejectionMatched": null,
+      "hallucinatedIds": [],
+      "failures": [],
+      "warnings": [],
+      "passed": true
+    },
+    {
+      "scenarioId": "S06-documentation-wording",
+      "kind": "selection",
+      "variant": "B-stub-lexical",
+      "goal": "Refactor documentation wording",
+      "admittedSkillIds": [
+        "acme/docs/technical-writing",
+        "acme/docs/api-reference-style"
+      ],
+      "admittedRoles": [
+        "documentation",
+        "documentation"
+      ],
+      "nominated": 2,
+      "rejected": 0,
+      "roleRecall": 1.0,
+      "requiredMissing": [],
+      "retrievalCeiling": 1.0,
+      "unreachableRoles": [],
+      "rankingGap": 0.0,
+      "substitutedRoles": [],
+      "irrelevantSelectionRate": 0.0,
+      "irrelevantSelected": [],
+      "forbiddenSelected": [],
+      "explanationCoverage": 1.0,
+      "unexplained": [],
+      "riskEffective": "medium",
+      "riskProposedByProvider": "medium",
+      "riskGate": "not_measured_deterministic_provider",
+      "explorationBudget": 0.15,
+      "explorationSafety": "not_applicable_v2_1",
+      "humanApprovalPresent": true,
+      "humanApprovalExpected": false,
+      "roleOrderRespected": null,
+      "policyRejectionMatched": null,
+      "hallucinatedIds": [],
+      "failures": [],
+      "warnings": [],
+      "passed": true
+    },
+    {
+      "scenarioId": "S07-authentication-architecture",
+      "kind": "selection",
+      "variant": "B-stub-lexical",
+      "goal": "Improve authentication architecture",
+      "admittedSkillIds": [
+        "acme/security/auth-architecture",
+        "acme/docs/technical-writing",
+        "acme/perf/frontend-bundle-size",
+        "acme/web/component-architecture"
+      ],
+      "admittedRoles": [
+        "auth",
+        "documentation",
+        "performance",
+        "component-architecture"
+      ],
+      "nominated": 4,
+      "rejected": 0,
+      "roleRecall": 1.0,
+      "requiredMissing": [],
+      "retrievalCeiling": 1.0,
+      "unreachableRoles": [],
+      "rankingGap": 0.0,
+      "substitutedRoles": [],
+      "irrelevantSelectionRate": 0.75,
+      "irrelevantSelected": [
+        "acme/docs/technical-writing (documentation)",
+        "acme/perf/frontend-bundle-size (performance)",
+        "acme/web/component-architecture (component-architecture)"
+      ],
+      "forbiddenSelected": [],
+      "explanationCoverage": 1.0,
+      "unexplained": [],
+      "riskEffective": "high",
+      "riskProposedByProvider": "medium",
+      "riskGate": "pass",
+      "explorationBudget": 0.0,
+      "explorationSafety": "pass",
+      "humanApprovalPresent": true,
+      "humanApprovalExpected": true,
+      "roleOrderRespected": null,
+      "policyRejectionMatched": null,
+      "hallucinatedIds": [],
+      "failures": [
+        "Selected 3 Skill(s) in roles marked irrelevant for this goal: acme/docs/technical-writing (documentation), acme/perf/frontend-bundle-size (performance), acme/web/component-architecture (component-architecture)"
+      ],
+      "warnings": [],
+      "passed": false
+    },
+    {
+      "scenarioId": "S08-positioning-before-copy",
+      "kind": "selection",
+      "variant": "B-stub-lexical",
+      "goal": "Create marketing positioning before homepage copy",
+      "admittedSkillIds": [
+        "acme/marketing/product-marketing-context",
+        "acme/marketing/copywriting",
+        "acme/marketing/page-cro",
+        "acme/data/postgres-rls-safety"
+      ],
+      "admittedRoles": [
+        "positioning",
+        "copy",
+        "conversion",
+        "database-security"
+      ],
+      "nominated": 4,
+      "rejected": 0,
+      "roleRecall": 1.0,
+      "requiredMissing": [],
+      "retrievalCeiling": 1.0,
+      "unreachableRoles": [],
+      "rankingGap": 0.0,
+      "substitutedRoles": [],
+      "irrelevantSelectionRate": 0.25,
+      "irrelevantSelected": [
+        "acme/data/postgres-rls-safety (database-security)"
+      ],
+      "forbiddenSelected": [],
+      "explanationCoverage": 1.0,
+      "unexplained": [],
+      "riskEffective": "medium",
+      "riskProposedByProvider": "medium",
+      "riskGate": "not_measured_deterministic_provider",
+      "explorationBudget": 0.15,
+      "explorationSafety": "not_applicable_v2_1",
+      "humanApprovalPresent": true,
+      "humanApprovalExpected": false,
+      "roleOrderRespected": true,
+      "policyRejectionMatched": null,
+      "hallucinatedIds": [],
+      "failures": [
+        "Selected 1 Skill(s) in roles marked irrelevant for this goal: acme/data/postgres-rls-safety (database-security)"
+      ],
+      "warnings": [],
+      "passed": false
+    },
+    {
+      "scenarioId": "S09-e2e-signup-funnel-tests",
+      "kind": "selection",
+      "variant": "B-stub-lexical",
+      "goal": "Add end to end browser tests for the signup funnel",
+      "admittedSkillIds": [
+        "acme/testing/playwright-e2e",
+        "acme/testing/python-unit-testing",
+        "acme/web/react-composition-patterns"
+      ],
+      "admittedRoles": [
+        "testing",
+        "testing",
+        "component-architecture"
+      ],
+      "nominated": 3,
+      "rejected": 0,
+      "roleRecall": 1.0,
+      "requiredMissing": [],
+      "retrievalCeiling": 1.0,
+      "unreachableRoles": [],
+      "rankingGap": 0.0,
+      "substitutedRoles": [],
+      "irrelevantSelectionRate": 0.0,
+      "irrelevantSelected": [],
+      "forbiddenSelected": [],
+      "explanationCoverage": 1.0,
+      "unexplained": [],
+      "riskEffective": "medium",
+      "riskProposedByProvider": "medium",
+      "riskGate": "not_measured_deterministic_provider",
+      "explorationBudget": 0.15,
+      "explorationSafety": "not_applicable_v2_1",
+      "humanApprovalPresent": true,
+      "humanApprovalExpected": false,
+      "roleOrderRespected": null,
+      "policyRejectionMatched": null,
+      "hallucinatedIds": [],
+      "failures": [],
+      "warnings": [],
+      "passed": true
+    },
+    {
+      "scenarioId": "S10-bundle-size-load-performance",
+      "kind": "selection",
+      "variant": "B-stub-lexical",
+      "goal": "Reduce frontend bundle size and improve load performance",
+      "admittedSkillIds": [
+        "acme/perf/frontend-bundle-size",
+        "acme/design/frontend-design",
+        "acme/mobile/touch-target-sizing",
+        "acme/docs/technical-writing",
+        "acme/data/postgres-query-performance",
+        "acme/web/react-composition-patterns"
+      ],
+      "admittedRoles": [
+        "performance",
+        "visual-design",
+        "accessibility",
+        "documentation",
+        "database-performance",
+        "component-architecture"
+      ],
+      "nominated": 6,
+      "rejected": 0,
+      "roleRecall": 1.0,
+      "requiredMissing": [],
+      "retrievalCeiling": 1.0,
+      "unreachableRoles": [],
+      "rankingGap": 0.0,
+      "substitutedRoles": [],
+      "irrelevantSelectionRate": 0.3333333333333333,
+      "irrelevantSelected": [
+        "acme/docs/technical-writing (documentation)",
+        "acme/data/postgres-query-performance (database-performance)"
+      ],
+      "forbiddenSelected": [],
+      "explanationCoverage": 1.0,
+      "unexplained": [],
+      "riskEffective": "medium",
+      "riskProposedByProvider": "medium",
+      "riskGate": "not_measured_deterministic_provider",
+      "explorationBudget": 0.15,
+      "explorationSafety": "not_applicable_v2_1",
+      "humanApprovalPresent": true,
+      "humanApprovalExpected": false,
+      "roleOrderRespected": null,
+      "policyRejectionMatched": null,
+      "hallucinatedIds": [],
+      "failures": [
+        "Selected 2 Skill(s) in roles marked irrelevant for this goal: acme/docs/technical-writing (documentation), acme/data/postgres-query-performance (database-performance)"
+      ],
+      "warnings": [],
+      "passed": false
+    },
+    {
+      "scenarioId": "S11-rls-before-production-rollout",
+      "kind": "selection",
+      "variant": "B-stub-lexical",
+      "goal": "Harden Postgres row level security before the production rollout",
+      "admittedSkillIds": [
+        "acme/data/postgres-rls-safety",
+        "acme/infra/ci-pipeline",
+        "acme/data/postgres-query-performance",
+        "acme/security/auth-architecture",
+        "acme/security/credential-handling"
+      ],
+      "admittedRoles": [
+        "database-security",
+        "infrastructure",
+        "database-performance",
+        "auth",
+        "security"
+      ],
+      "nominated": 6,
+      "rejected": 1,
+      "roleRecall": 1.0,
+      "requiredMissing": [],
+      "retrievalCeiling": 1.0,
+      "unreachableRoles": [],
+      "rankingGap": 0.0,
+      "substitutedRoles": [],
+      "irrelevantSelectionRate": 0.0,
+      "irrelevantSelected": [],
+      "forbiddenSelected": [],
+      "explanationCoverage": 1.0,
+      "unexplained": [],
+      "riskEffective": "high",
+      "riskProposedByProvider": "medium",
+      "riskGate": "pass",
+      "explorationBudget": 0.0,
+      "explorationSafety": "pass",
+      "humanApprovalPresent": true,
+      "humanApprovalExpected": true,
+      "roleOrderRespected": null,
+      "policyRejectionMatched": null,
+      "hallucinatedIds": [],
+      "failures": [],
+      "warnings": [],
+      "passed": true
+    },
+    {
+      "scenarioId": "S12-backup-retention-uncached-only",
+      "kind": "policy",
+      "variant": "B-stub-lexical",
+      "goal": "Schedule and verify database backup retention",
+      "admittedSkillIds": [
+        "acme/data/postgres-query-performance",
+        "acme/data/postgres-rls-safety",
+        "acme/testing/python-unit-testing"
+      ],
+      "admittedRoles": [
+        "database-performance",
+        "database-security",
+        "testing"
+      ],
+      "nominated": 4,
+      "rejected": 1,
+      "roleRecall": null,
+      "requiredMissing": [
+        "database-operations"
+      ],
+      "retrievalCeiling": 0.0,
+      "unreachableRoles": [
+        "database-operations"
+      ],
+      "rankingGap": null,
+      "substitutedRoles": [
+        "database-performance",
+        "database-security",
+        "testing"
+      ],
+      "irrelevantSelectionRate": 0.0,
+      "irrelevantSelected": [],
+      "forbiddenSelected": [],
+      "explanationCoverage": 1.0,
+      "unexplained": [],
+      "riskEffective": "medium",
+      "riskProposedByProvider": "medium",
+      "riskGate": "not_measured_deterministic_provider",
+      "explorationBudget": 0.15,
+      "explorationSafety": "not_applicable_v2_1",
+      "humanApprovalPresent": true,
+      "humanApprovalExpected": false,
+      "roleOrderRespected": null,
+      "policyRejectionMatched": true,
+      "hallucinatedIds": [],
+      "failures": [],
+      "warnings": [
+        "The role-correct Skill was unavailable, and Forge still returned a plan built from adjacent roles (database-performance, database-security, testing). The rejection is recorded in the plan, but nothing marks the returned selection as failing to address the goal."
+      ],
+      "passed": true
+    }
+  ],
+  "unprovenClaims": [
+    "Whether LLM reranking beats retrieval-only on real Skills is unmeasured; variant C requires an API key.",
+    "Whether a Forge plan improves final implementation quality versus a plain prompt is unmeasured; that needs agent execution, which V2.1 does not perform.",
+    "Whether historical evidence improves recommendation is unmeasured; V2.2 owns it.",
+    "Whether adaptive exploration finds good new Skills is unmeasured; V2.2 owns it.",
+    "Fixture retrieval difficulty is authored, not sampled from the live 9,610-entry catalog."
+  ]
+}

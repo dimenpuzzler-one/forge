@@ -1,6 +1,6 @@
 # Forge implementation status
 
-Last updated: 2026-08-11
+Last updated: 2026-08-12
 
 This is the implementation ledger for the phases in `FORGE_CODEX_IMPLEMENTATION_BRIEF.md`. “Complete” means implemented, tested, and smoke-tested locally unless a limitation is explicitly noted.
 
@@ -15,6 +15,9 @@ This is the implementation ledger for the phases in `FORGE_CODEX_IMPLEMENTATION_
 | 6 — Evaluation + version lifecycle | Complete | Local static audit, license status, optional upstream audit import, version refresh/diff, cached update reporting | 20 tests, including CLI diff + outdated preserving a pin | Static signals are not a safety guarantee; live audit requires OIDC |
 | 7 — Runtime + agent adapter | In progress | Generic filesystem session materialization and `forge bundle`/`use` | 21 tests, including isolated bundle with a script file | No specialized Agent adapter or project audit yet |
 | 8+ — Explorer, graph, labs, learning | Not started | — | — | Build only as working local slices |
+| V2.1 — Planner foundation | Partial | `forge_planner` provider abstraction, offline stub provider, Anthropic provider, deterministic FTS retrieval, policy gate, `forge plan` with `plan.json`/`plan.md` artifacts | 41 tests (20 new), plus a lying-provider demo showing 3 nominations reduced to 1 admission | No historical evidence lookup, no exploration slot, no DAG metadata; the Anthropic path is unverified against the live API |
+| V2.1b — Planner benchmark | Complete (fixture-tested) | `forge_benchmark` harness, 26-Skill fixture catalog, 12 graded scenarios, 3 variants, 6 adversarial policy probes, retrieval-ceiling metric, `forge benchmark` with committed artifacts | 60 tests; 6/6 probes pass; both deterministic variants reproduce exactly; verified on Python 3.12.10 with identical numbers | Measured ranking gap is 0.00; three open defects recorded (F1 unreachable audit block, F2 no retrieval stemming, F3 silent role substitution); variant C never ran |
+| V2.1c — OpenAI provider + provider tests | Complete (offline-tested) | `OpenAIProvider` on Chat Completions with `OPENAI_BASE_URL`/`OPENAI_MODEL` overrides, shared `post_json` helper with a `_post` seam, benchmark survives a mid-run provider failure, auth test environment isolation | 76 tests (16 new); request shape, error translation, and parsing covered without a key | No live API call has ever been made by either network provider; `max_completion_tokens` and `response_format` are unverified against a real endpoint |
 
 ## Phase 0–3 details
 
@@ -106,6 +109,118 @@ Implementation commit: `bde9c7d` (`make skills auth independent of project cwd`)
 - `forge bundle` materializes a composition's selected cached hashes into a unique global session directory.
 - `forge use` does the same for a single explicitly cached immutable Skill.
 - The generic filesystem adapter creates an instruction string only; it neither starts an agent nor executes external scripts.
+
+## Vol.2 Milestone V2.1 details (planner foundation)
+
+`forge-development-plan-vol2.md` §37 defines V2.1 as the planner foundation. This slice
+implements the retrieval → judgment → admission path and stops there deliberately.
+
+### What is implemented
+
+- `packages/planner/forge_planner/provider.py` — a `PlanProvider` protocol, a `PlanRequest`
+  carrying goal + trimmed context + candidate metadata, and tolerant parsing of untrusted
+  provider JSON. `StubProvider` is offline and deterministic; `AnthropicProvider` uses only
+  the standard library so `dependencies = []` is preserved.
+- `packages/planner/forge_planner/policy.py` — the deterministic admission gate (ADR-006).
+- `packages/planner/forge_planner/service.py` — query derivation, FTS top-K retrieval, plan
+  assembly, and the `plan.json` / `plan.md` artifacts under `<FORGE_HOME>/plans/<plan-id>/`.
+- `forge plan "<goal>" [--provider stub|anthropic] [--model ...] [--candidates N]`.
+
+Skill file contents are never sent to a provider; only id, name, source, and a truncated
+description are. No database migration was required, so schema version stays at 3.
+
+### What is deliberately absent
+
+Historical evidence lookup, exploration slots, conditional Skill rules, and composition DAG
+metadata all belong to V2.2 and are not stubbed out. `plan.json` reserves `exploration` and
+`historicalEvidence` fields so V2.2 can populate them without a schema break.
+
+### Verification
+
+```text
+python -m unittest discover                                    PASS (41 tests, 20 new)
+Policy gate drops an invented Skill id                         PASS (unit + demo)
+Policy gate refuses a Skill with no cached immutable hash       PASS (unit + CLI integration)
+Policy gate raises "low" to "high" from a payment goal          PASS (unit)
+Warning-level audit is admitted but flagged for review          PASS (unit)
+Malformed / fenced provider JSON degrades without crashing      PASS (unit)
+CLI plan writes plan.json + plan.md with gate accounting        PASS (integration)
+Unknown provider exits non-zero and writes no plan              PASS (integration)
+```
+
+Observed demo, using a provider deliberately built to lie: 3 Skills nominated, 1 admitted,
+1 rejected as an invented id, 1 rejected for having no cached hash.
+
+### Limitations, stated plainly
+
+- The tests ran on Python 3.10 through a test-only `datetime.UTC` shim because this sandbox
+  could not obtain a 3.12 interpreter. The repository still targets 3.12 and was not modified
+  for 3.10. A 3.12 run on the user's machine is still required.
+- `AnthropicProvider` has no live-API verification. Its request shape, error handling, and
+  parsing are covered by unit tests only.
+- Plan quality is capped by FTS retrieval quality. Vol.2 §8 hybrid retrieval is unimplemented.
+- `StubProvider` output is lexical overlap. It is not a measurement of Forge's planning value,
+  and Vol.2 §38 baseline comparison has not been run.
+
+## Vol.2 Milestone V2.1b details (planner benchmark)
+
+Vol.2 §38 requires a baseline comparison before Forge can claim planning value. This slice
+builds the measurement, runs it, and records the result — including results that are
+unfavourable to Forge.
+
+### What is implemented
+
+- `packages/benchmark/forge_benchmark/fixtures.py` — loads and validates the authored fixture,
+  and materializes it into an isolated throwaway registry. The benchmark never touches the
+  user's real registry; an integration test asserts this.
+- `probes.py` — `RetrievalOnlyProvider` (variant A, the no-model floor) and six adversarial
+  probes, one per ADR-006 invariant.
+- `metrics.py` — graded scoring plus the retrieval-ceiling and ranking-gap metrics that
+  separate a retrieval failure from a ranking failure.
+- `runner.py` — variant × scenario execution, determinism re-runs, artifact rendering.
+- `forge benchmark [--external-provider ...] [--fixtures ...] [--output ...]`, exiting
+  non-zero when a policy probe regresses.
+- `tests/fixtures/planner-benchmark/` — 26 synthetic Skills, 12 graded scenarios.
+
+`PlanResult` gained a `candidate_ids` field so a caller can tell "the reranker chose badly"
+apart from "retrieval never offered it". That is the only change to V2.1 planner behaviour,
+and it is additive.
+
+### Results
+
+| Variant | Role recall | Retrieval ceiling | Ranking gap | Irrelevant rate | Passed |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| A — retrieval-only | 0.95 | 0.95 | 0.00 | 0.126 | 7 / 12 |
+| B — stub lexical | 0.95 | 0.95 | 0.00 | 0.121 | 8 / 12 |
+| C — LLM provider | — | — | — | — | `skipped_external_provider` |
+
+Policy probes: 6 / 6 pass. Determinism: both deterministic variants reproduce exactly.
+Explanation coverage: 1.00.
+
+### Open defects found by the benchmark
+
+- **F1** — the policy gate's audit hard block is unreachable from the shipped static auditor,
+  which emits only `pass/low`, `warn/low`, `warn/medium`, and from external audit import,
+  which never writes to `skill_versions`. The strongest safety claim in ADR-006 is currently
+  dead code.
+- **F2** — FTS has no stemming. `search("redesign")` returns 0 results while
+  `search("design")` returns 5. Retrieval, not ranking, is the binding constraint.
+- **F3** — when no admissible Skill covers a required role, Forge still returns a plan built
+  from adjacent roles without marking it as failing to address the goal.
+
+### Recommendation
+
+**FIX V2.1 FIRST.** A ranking gap of 0.00 means V2.2's historical evidence and exploration
+would optimize a stage that currently has nothing to recover. See
+[the benchmark findings](PLANNER_BENCHMARK.md) for the evidence and the suggested order.
+
+### Limitations
+
+- Fixture retrieval difficulty is authored, not sampled from the live catalog.
+- Ground truth encodes one defensible opinion, written by the same author as the fixture.
+- Variant C never ran; no `ANTHROPIC_API_KEY` was available.
+- The benchmark measures plan quality, not implementation quality.
+- Run on Python 3.10 with an uncommitted `datetime.UTC` shim; 3.12 verification outstanding.
 
 ## Commit ledger
 

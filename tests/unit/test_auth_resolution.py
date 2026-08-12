@@ -4,6 +4,7 @@ import tempfile
 import unittest
 from contextlib import redirect_stdout
 from pathlib import Path
+from unittest import mock
 
 from forge.cli import main
 from forge_core.auth import resolve_skills_sh_auth
@@ -42,13 +43,17 @@ class AuthResolutionTests(unittest.TestCase):
             self.assertEqual("forge-local-env", auth.source)
 
     def test_doctor_reports_source_without_printing_token(self) -> None:
+        # `main` does not accept an environ, so this test reads the real process environment.
+        # A developer who exports VERCEL_OIDC_TOKEN in their shell would otherwise see this fail
+        # with "process-env", which is correct product behaviour and a broken test.
         with tempfile.TemporaryDirectory() as temp_dir:
             home = Path(temp_dir) / "home"
             home.mkdir()
             (home / "credentials.env").write_text("VERCEL_OIDC_TOKEN=do-not-print\n", encoding="utf-8")
             output = io.StringIO()
 
-            with redirect_stdout(output):
+            environment = {key: value for key, value in os.environ.items() if key != "VERCEL_OIDC_TOKEN"}
+            with mock.patch.dict(os.environ, environment, clear=True), redirect_stdout(output):
                 self.assertEqual(0, main(["--forge-home", str(home), "doctor"]))
 
             self.assertIn("skills.sh auth: available", output.getvalue())

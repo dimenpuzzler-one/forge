@@ -1,0 +1,305 @@
+{
+  "schemaVersion": 1,
+  "description": "Planner benchmark scenarios. Ground truth is graded, not exact-match: a selection is judged against required / acceptable / irrelevant / forbidden role sets, because more than one defensible Skill team exists for most goals.",
+  "gradingContract": {
+    "requiredRoles": "Roles a competent plan must cover. Drives role recall.",
+    "acceptableRoles": "Roles that are reasonable to include. Neither rewarded nor penalized.",
+    "irrelevantRoles": "Roles a competent plan should not select for this goal. Drives the irrelevant selection rate.",
+    "forbiddenSkills": "Specific Skill ids that must never be admitted. A single occurrence is a hard failure.",
+    "riskMustBe": "When set, Forge's effective risk must equal this value regardless of what the provider proposed. When null, risk is recorded but not scored, because a deterministic provider cannot assess risk.",
+    "expectedRoleOrder": "When set, these roles must appear in this relative order in the admitted selection.",
+    "kind": "selection scores plan quality; policy scores whether Forge correctly refuses to produce a plan."
+  },
+  "scenarios": [
+    {
+      "id": "S01-landing-conversion-redesign",
+      "kind": "selection",
+      "goal": "Redesign a public landing page for stronger conversion",
+      "projectContext": {
+        "name": "benchmark-web",
+        "languages": ["typescript"],
+        "stack": ["nextjs", "react"],
+        "domains": ["marketing"]
+      },
+      "requiredRoles": ["conversion", "visual-design"],
+      "acceptableRoles": ["copy", "positioning", "responsive", "accessibility"],
+      "irrelevantRoles": [
+        "database-performance",
+        "database-security",
+        "database-operations",
+        "payments",
+        "auth",
+        "infrastructure",
+        "quant",
+        "ai-reliability",
+        "i18n"
+      ],
+      "forbiddenSkills": [],
+      "riskMustBe": null,
+      "note": "Shaped after the ORACROSS growth redesign described in vol2.md section 4. No real ORACROSS artifact was used."
+    },
+    {
+      "id": "S02-component-api-boolean-props",
+      "kind": "selection",
+      "goal": "Improve React component API and eliminate boolean prop proliferation",
+      "projectContext": {
+        "name": "benchmark-web",
+        "languages": ["typescript"],
+        "stack": ["react"],
+        "domains": []
+      },
+      "requiredRoles": ["component-architecture"],
+      "acceptableRoles": ["testing", "performance", "documentation"],
+      "irrelevantRoles": [
+        "positioning",
+        "copy",
+        "conversion",
+        "database-performance",
+        "database-security",
+        "database-operations",
+        "payments",
+        "auth",
+        "quant"
+      ],
+      "forbiddenSkills": [],
+      "riskMustBe": null
+    },
+    {
+      "id": "S03-mobile-overflow-touch-targets",
+      "kind": "selection",
+      "goal": "Fix mobile overflow and inaccessible touch targets",
+      "projectContext": {
+        "name": "benchmark-web",
+        "languages": ["typescript"],
+        "stack": ["react"],
+        "domains": []
+      },
+      "requiredRoles": ["responsive", "accessibility"],
+      "acceptableRoles": ["visual-design", "performance"],
+      "irrelevantRoles": [
+        "database-performance",
+        "database-security",
+        "database-operations",
+        "payments",
+        "auth",
+        "quant",
+        "infrastructure"
+      ],
+      "forbiddenSkills": [],
+      "riskMustBe": null
+    },
+    {
+      "id": "S04-postgres-slow-joins",
+      "kind": "selection",
+      "goal": "Optimize a Postgres query with slow joins",
+      "projectContext": {
+        "name": "benchmark-data",
+        "languages": ["python"],
+        "stack": ["postgres"],
+        "domains": []
+      },
+      "requiredRoles": ["database-performance"],
+      "acceptableRoles": ["testing", "database-operations", "performance"],
+      "irrelevantRoles": [
+        "conversion",
+        "copy",
+        "positioning",
+        "visual-design",
+        "accessibility",
+        "responsive",
+        "i18n"
+      ],
+      "forbiddenSkills": [],
+      "riskMustBe": null,
+      "note": "UI and CRO Skills are explicit negative candidates here."
+    },
+    {
+      "id": "S05-add-payment-flow",
+      "kind": "selection",
+      "goal": "Add payment flow",
+      "projectContext": {
+        "name": "benchmark-commerce",
+        "languages": ["typescript"],
+        "stack": [],
+        "domains": ["payments"]
+      },
+      "requiredRoles": ["payments"],
+      "acceptableRoles": ["testing", "security", "auth", "database-security"],
+      "irrelevantRoles": ["positioning", "copy", "conversion", "quant", "i18n"],
+      "forbiddenSkills": [],
+      "riskMustBe": "high",
+      "expectExplorationBudgetZero": true,
+      "expectHumanApproval": true
+    },
+    {
+      "id": "S06-documentation-wording",
+      "kind": "selection",
+      "goal": "Refactor documentation wording",
+      "projectContext": {
+        "name": "benchmark-docs",
+        "languages": ["python"],
+        "stack": [],
+        "domains": []
+      },
+      "requiredRoles": ["documentation"],
+      "acceptableRoles": [],
+      "irrelevantRoles": [
+        "component-architecture",
+        "database-performance",
+        "database-security",
+        "database-operations",
+        "payments",
+        "auth",
+        "infrastructure",
+        "quant"
+      ],
+      "forbiddenSkills": [],
+      "riskMustBe": null,
+      "note": "Intended as a low-risk task, but Forge cannot score low risk while the provider is deterministic. Risk is recorded, not scored."
+    },
+    {
+      "id": "S07-authentication-architecture",
+      "kind": "selection",
+      "goal": "Improve authentication architecture",
+      "projectContext": {
+        "name": "benchmark-platform",
+        "languages": ["python"],
+        "stack": [],
+        "domains": []
+      },
+      "requiredRoles": ["auth"],
+      "acceptableRoles": ["security", "testing", "database-security"],
+      "irrelevantRoles": [
+        "positioning",
+        "copy",
+        "conversion",
+        "visual-design",
+        "responsive",
+        "accessibility",
+        "component-architecture",
+        "documentation",
+        "performance",
+        "quant",
+        "i18n"
+      ],
+      "forbiddenSkills": [],
+      "riskMustBe": "high",
+      "expectExplorationBudgetZero": true,
+      "expectHumanApproval": true
+    },
+    {
+      "id": "S08-positioning-before-copy",
+      "kind": "selection",
+      "goal": "Create marketing positioning before homepage copy",
+      "projectContext": {
+        "name": "benchmark-web",
+        "languages": ["typescript"],
+        "stack": [],
+        "domains": ["marketing"]
+      },
+      "requiredRoles": ["positioning"],
+      "acceptableRoles": ["copy", "conversion", "visual-design"],
+      "irrelevantRoles": [
+        "database-performance",
+        "database-security",
+        "database-operations",
+        "payments",
+        "auth",
+        "infrastructure",
+        "quant"
+      ],
+      "forbiddenSkills": [],
+      "riskMustBe": null,
+      "expectedRoleOrder": ["positioning", "copy"],
+      "note": "Encodes the positioning-context-before-copy pattern from vol2.md section 4.4."
+    },
+    {
+      "id": "S09-e2e-signup-funnel-tests",
+      "kind": "selection",
+      "goal": "Add end to end browser tests for the signup funnel",
+      "projectContext": {
+        "name": "benchmark-web",
+        "languages": ["typescript"],
+        "stack": ["react"],
+        "domains": []
+      },
+      "requiredRoles": ["testing"],
+      "acceptableRoles": ["accessibility", "responsive", "conversion"],
+      "irrelevantRoles": [
+        "database-performance",
+        "database-security",
+        "database-operations",
+        "payments",
+        "quant",
+        "i18n"
+      ],
+      "forbiddenSkills": [],
+      "riskMustBe": null
+    },
+    {
+      "id": "S10-bundle-size-load-performance",
+      "kind": "selection",
+      "goal": "Reduce frontend bundle size and improve load performance",
+      "projectContext": {
+        "name": "benchmark-web",
+        "languages": ["typescript"],
+        "stack": ["react"],
+        "domains": []
+      },
+      "requiredRoles": ["performance"],
+      "acceptableRoles": ["component-architecture", "testing", "infrastructure"],
+      "irrelevantRoles": [
+        "positioning",
+        "copy",
+        "conversion",
+        "payments",
+        "auth",
+        "database-performance",
+        "database-security",
+        "database-operations",
+        "documentation",
+        "quant",
+        "i18n"
+      ],
+      "forbiddenSkills": [],
+      "riskMustBe": null
+    },
+    {
+      "id": "S11-rls-before-production-rollout",
+      "kind": "selection",
+      "goal": "Harden Postgres row level security before the production rollout",
+      "projectContext": {
+        "name": "benchmark-data",
+        "languages": ["python"],
+        "stack": ["postgres", "supabase"],
+        "domains": []
+      },
+      "requiredRoles": ["database-security"],
+      "acceptableRoles": ["security", "testing", "infrastructure", "auth"],
+      "irrelevantRoles": ["positioning", "copy", "conversion", "visual-design", "quant", "i18n"],
+      "forbiddenSkills": ["acme/security/hardblocked-legacy-helper"],
+      "riskMustBe": "high",
+      "expectExplorationBudgetZero": true,
+      "expectHumanApproval": true,
+      "note": "The word production triggers Forge risk escalation even though no provider proposed high risk."
+    },
+    {
+      "id": "S12-backup-retention-uncached-only",
+      "kind": "policy",
+      "goal": "Schedule and verify database backup retention",
+      "projectContext": {
+        "name": "benchmark-data",
+        "languages": ["python"],
+        "stack": ["postgres"],
+        "domains": []
+      },
+      "requiredRoles": ["database-operations"],
+      "acceptableRoles": ["testing", "infrastructure"],
+      "irrelevantRoles": ["positioning", "copy", "conversion", "visual-design"],
+      "forbiddenSkills": ["acme/data/backup-scheduler"],
+      "riskMustBe": null,
+      "expectPolicyRejectionContains": "forge inspect",
+      "note": "The only role-correct Skill in the catalog is deliberately uncached. Correct behaviour is refusal with an actionable message, not a weaker substitute selection. Role recall is expected to be zero and is not counted as a quality failure."
+    }
+  ]
+}

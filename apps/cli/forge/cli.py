@@ -11,7 +11,10 @@ from pathlib import Path
 from forge_core.errors import ForgeError
 from forge_core.paths import database_path, ensure_forge_home, forge_home
 from forge_core.auth import resolve_skills_sh_auth
+from forge_benchmark.runner import build_summary, resolve_external_provider, run_benchmark, write_artifacts
 from forge_compose.service import add_skill_to_composition, analyze_composition, manifest
+from forge_planner.provider import resolve_provider
+from forge_planner.service import create_plan
 from forge_project.scanner import scan_project, write_project_context
 from forge_project.lockfile import load_lockfile, pin_skill
 from forge_project.recommend import recommend_skills
@@ -99,6 +102,34 @@ def build_parser() -> argparse.ArgumentParser:
     compose_analyze.add_argument("name")
     compose_analyze.add_argument("--goal")
 
+    plan = subcommands.add_parser(
+        "plan", help="Turn a goal into a policy-verified Skill plan. The provider proposes; Forge admits."
+    )
+    plan.add_argument("goal")
+    plan.add_argument("--project", help="Project root (default: current directory).")
+    plan.add_argument(
+        "--provider",
+        default="stub",
+        help="Planning provider: stub (offline, deterministic), anthropic, or openai (default: stub).",
+    )
+    plan.add_argument("--model", help="Override the provider model, when the provider supports one.")
+    plan.add_argument("--candidates", type=int, default=60, help="FTS candidate ceiling (5-200; default: 60).")
+
+    benchmark = subcommands.add_parser(
+        "benchmark", help="Measure planner selection quality and policy correctness against fixtures."
+    )
+    benchmark.add_argument(
+        "--output", help="Artifact directory (default: artifacts/planner-benchmark under the current directory)."
+    )
+    benchmark.add_argument("--fixtures", help="Override the benchmark fixture directory.")
+    benchmark.add_argument(
+        "--external-provider",
+        help="Run variant C with this provider: anthropic or openai. Skipped and recorded when absent.",
+    )
+    benchmark.add_argument(
+        "--model", help="Model override for the external provider (for example: gpt-5.6-luna)."
+    )
+
     bundle = subcommands.add_parser("bundle", help="Materialize a safe generic-agent session from a composition.")
     bundle.add_argument("composition")
     bundle.add_argument("--project", help="Project root (default: current directory).")
@@ -139,6 +170,10 @@ def main(argv: list[str] | None = None) -> int:
             return _collection(args)
         if args.command == "compose":
             return _compose(args)
+        if args.command == "plan":
+            return _plan(args)
+        if args.command == "benchmark":
+            return _benchmark(args)
         if args.command == "bundle":
             return _bundle(args)
         if args.command == "use":
@@ -515,6 +550,111 @@ def _compose(args: argparse.Namespace) -> int:
     finally:
         registry.close()
     return 0
+
+
+def _plan(args: argparse.Namespace) -> int:
+    if not 5 <= args.candidates <= 200:
+        raise ValueError("--candidates must be between 5 and 200")
+    context = scan_project(args.project)
+    provider = resolve_provider(args.provider, model=args.model)
+    home, registry = _registry(args.forge_home)
+    try:
+        result = create_plan(
+            registry,
+            provider,
+            goal=args.goal,
+            project_context=context,
+            plans_root=home / "plans",
+            candidate_limit=args.candidates,
+        )
+    finally:
+        registry.close()
+
+    gate = result.gate
+    print(f"Plan: {result.plan_id}")
+    print(f"Goal: {result.goal}")
+    print(f"Provider: {result.provider_name} (proposal only)")
+    print(f"Queries: {', '.join(result.queries) or '(none)'}")
+    print(f"Retrieved candidates: {result.retrieved}")
+    print(f"Risk: {gate.risk} | exploration budget: {gate.exploration_budget:.0%}")
+    print(
+        f"Policy gate: nominated={len(result.proposal.selected)}, "
+        f"admitted={len(gate.admitted)}, rejected={gate.blocked_count}"
+    )
+    if gate.hallucinated_ids:
+        print(f"Provider invented {len(gate.hallucinated_ids)} unknown Skill id(s); all were dropped:")
+        for skill_id in gate.hallucinated_ids:
+            print(f"  x {skill_id}")
+    if result.retrieved == 0:
+        print("No local candidates matched. Run `forge sync --source skills-sh --metadata-only` first.")
+    print("\nSelected:")
+    if not gate.admitted:
+        print("  (none survived the policy gate)")
+    for decision in gate.admitted:
+        print(f"  - {decision.role}: {decision.skill_id} @ {decision.content_hash}")
+        print(f"    reason: {decision.reason}")
+        print(f"    audit: {decision.security_status} / {decision.risk_level}")
+        for note in decision.review_notes:
+            print(f"    caution: {note}")
+    if gate.rejected:
+        print("\nRejected by Forge:")
+        for decision in gate.rejected:
+            print(f"  x {decision.skill_id}: {decision.reason}")
+    if gate.human_approval_required:
+        print("\nHuman approval required:")
+        for item in gate.human_approval_required:
+            print(f"  ! {item}")
+    print(f"\nPlan artifacts: {result.directory}")
+    print("Skill selection reasoning is a model judgment, not verified evidence. Review before executing.")
+    return 0
+
+
+def _benchmark(args: argparse.Namespace) -> int:
+    external, skip_reason = resolve_external_provider(args.external_provider, args.model)
+    run = run_benchmark(
+        fixture_root=Path(args.fixtures).expanduser() if args.fixtures else None,
+        external_provider=external,
+        external_provider_skip_reason=skip_reason,
+    )
+    output_dir = Path(args.output).expanduser() if args.output else Path.cwd() / "artifacts" / "planner-benchmark"
+    summary_path, report_path = write_artifacts(run, output_dir=output_dir)
+    summary = build_summary(run)
+
+    print("Forge planner benchmark")
+    print(f"Runtime: {run.runtime['sandboxRuntime']} (target {run.runtime['targetRuntime']})")
+    if run.runtime["local312VerificationRequired"]:
+        print("Caution: this did not run on the target interpreter; re-run on Python 3.12.")
+    print(f"Fixture: {summary['fixture']['catalogSize']} Skills, {summary['fixture']['scenarioCount']} scenarios")
+    print("")
+    for variant, status in run.variants.items():
+        values = summary["aggregates"].get(variant)
+        if values is None:
+            print(f"{variant}: {status}")
+            continue
+        print(
+            f"{variant}: passed {values['passed']}/{values['scenarios']} | "
+            f"role recall {_metric(values['meanRoleRecall'])} | "
+            f"irrelevant {_metric(values['meanIrrelevantSelectionRate'])} | "
+            f"admitted {_metric(values['meanAdmittedCount'])} | "
+            f"explanations {_metric(values['meanExplanationCoverage'])}"
+        )
+    print("")
+    probes = summary["policyProbes"]
+    print(f"Policy probes: {probes['passed']}/{probes['total']} passed")
+    for probe in run.probes:
+        if not probe.passed:
+            print(f"  FAIL {probe.probe_id}: {'; '.join(probe.mismatches)}")
+    for variant, values in run.determinism.items():
+        state = "reproducible" if values["reproducible"] else f"diverged on {values['divergentScenarios']}"
+        print(f"Determinism {variant}: {state}")
+    print("")
+    print(f"Summary: {summary_path}")
+    print(f"Report:  {report_path}")
+    return 0 if probes["allPassed"] else 1
+
+
+def _metric(value: float | None) -> str:
+    return "n/a" if value is None else f"{value:.2f}"
 
 
 def _bundle(args: argparse.Namespace) -> int:
