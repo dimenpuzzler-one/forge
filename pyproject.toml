@@ -4,13 +4,25 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "forge-skill-toolkit"
-version = "0.1.0"
+version = "0.2.0"
 description = "Local-first skill exploration and engineering toolkit"
 readme = "README.md"
 requires-python = ">=3.12"
 license = { text = "Apache-2.0" }
 authors = [{ name = "Forge contributors" }]
 dependencies = []
+keywords = ["agent-skills", "claude-code", "skill-registry", "supply-chain", "cli"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Operating System :: OS Independent",
+    "Environment :: Console",
+]
+
+[project.urls]
+Homepage = "https://github.com/dimenpuzzler-one/forge"
+Issues = "https://github.com/dimenpuzzler-one/forge/issues"
 
 [project.scripts]
 forge = "forge.cli:main"

@@ -6,6 +6,7 @@ import os
 import sqlite3
 import sys
 from datetime import UTC, datetime
+from importlib import metadata
 from pathlib import Path
 
 from forge_core.errors import ForgeError
@@ -23,6 +24,7 @@ from forge_project.recommend import recommend_skills
 from forge_registry.database import Registry
 from forge_runtime.generic_filesystem import materialize_bundle, render_instructions
 from forge_search.service import search_skills
+from forge_sources.local import LOCAL_SOURCE_TYPE, default_label, import_skills, validate_label
 from forge_sources.skills_sh import SkillsShAdapter, sync_metadata
 
 
@@ -31,6 +33,7 @@ def build_parser() -> argparse.ArgumentParser:
         prog="forge",
         description="Local-first skill exploration and project-context toolkit.",
     )
+    parser.add_argument("--version", action="version", version=f"forge {_installed_version()}")
     parser.add_argument(
         "--forge-home",
         help="Override the global Forge data directory for this command (default: FORGE_HOME or ~/.forge).",
@@ -49,6 +52,17 @@ def build_parser() -> argparse.ArgumentParser:
     sync.add_argument("--metadata-only", action="store_true", help="Required for MVP; do not fetch full skill files.")
     sync.add_argument("--per-page", type=int, default=500, help="skills.sh page size (1-500; default: 500).")
     sync.add_argument("--if-stale", help="Skip only when the last successful catalog sync is newer than this TTL (e.g. 6h).")
+
+    import_ = subcommands.add_parser(
+        "import",
+        help="Register Agent Skills from a local directory (a clone, ~/.claude/skills, ...). No network or token.",
+    )
+    import_.add_argument("path", help="Directory to search for SKILL.md files.")
+    import_.add_argument(
+        "--label",
+        help="Source label used in Skill ids, local/<label>/... (default: the directory name). Reuse it to re-import.",
+    )
+    import_.add_argument("--verbose", action="store_true", help="List every skipped file instead of a summary.")
 
     search = subcommands.add_parser("search", help="Search locally synchronized skill metadata with SQLite FTS5.")
     search.add_argument("query")
@@ -164,6 +178,13 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _installed_version() -> str:
+    try:
+        return metadata.version("forge-skill-toolkit")
+    except metadata.PackageNotFoundError:
+        return "unknown (not installed)"
+
+
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     try:
@@ -175,6 +196,8 @@ def main(argv: list[str] | None = None) -> int:
             return _scan(args)
         if args.command == "sync":
             return _sync(args)
+        if args.command == "import":
+            return _import(args)
         if args.command == "search":
             return _search(args)
         if args.command == "inspect":
@@ -226,6 +249,7 @@ def _doctor(args: argparse.Namespace) -> int:
         registry.migrate()
         fts5 = registry.connection.execute("SELECT sqlite_compileoption_used('ENABLE_FTS5')").fetchone()[0]
         source = registry.source_status("skills-sh")
+        local_sources = registry.local_sources()
     finally:
         registry.close()
     project_state = "not checked"
@@ -243,8 +267,12 @@ def _doctor(args: argparse.Namespace) -> int:
     print(f"auth source: {auth.source}")
     print(f"Project path: {project_state}")
     _print_source_freshness(source)
+    _print_local_sources(local_sources)
     if not auth.token:
-        print("Note: configure VERCEL_OIDC_TOKEN or Forge-local credentials.env; local scan/search remain available.")
+        print(
+            "Note: skills.sh sync needs VERCEL_OIDC_TOKEN. Without it, `forge import <dir>` registers local "
+            "Skills and every other command works offline."
+        )
     return 0
 
 
@@ -252,9 +280,11 @@ def _status(args: argparse.Namespace) -> int:
     _, registry = _registry(args.forge_home)
     try:
         source = registry.source_status("skills-sh")
+        local_sources = registry.local_sources()
     finally:
         registry.close()
     _print_source_freshness(source)
+    _print_local_sources(local_sources)
     return 0
 
 
@@ -339,6 +369,58 @@ def _print_source_freshness(source: sqlite3.Row | None) -> None:
         )
 
 
+def _print_local_sources(sources: list[sqlite3.Row]) -> None:
+    for source in sources:
+        print(f"{source['name']}: {source['skill_count']} Skills, last import {source['last_sync_at'] or 'never'}")
+
+
+def _import(args: argparse.Namespace) -> int:
+    root = Path(args.path).expanduser().resolve()
+    label = validate_label(args.label) if args.label else default_label(root)
+    home, registry = _registry(args.forge_home)
+    try:
+        report = import_skills(registry, root, label=label, snapshots_root=home / "snapshots")
+    finally:
+        registry.close()
+    skills = report["skills"]
+    print(f"Imported from {report['root']} as {report['source']}")
+    for skill in skills:
+        print(f"  [{skill['state']}] {skill['id']}  ({skill['security']})")
+    for path, reason in report["rejectedSkills"]:
+        print(f"  x rejected {path}: {reason}")
+    _print_skipped_files(report["skippedFiles"], verbose=args.verbose)
+    states = [skill["state"] for skill in skills]
+    print(
+        f"Skills: {len(skills)} (new={states.count('new')}, new-version={states.count('new-version')}, "
+        f"unchanged={states.count('unchanged')}, rejected={len(report['rejectedSkills'])})"
+    )
+    if not skills and not report["rejectedSkills"]:
+        print("No SKILL.md files were found. Point `forge import` at a directory that contains Skill folders.")
+    else:
+        print("Skill files are stored as data and never executed. Review with `forge inspect <id>`.")
+    return 0
+
+
+def _print_skipped_files(skipped: list[tuple[str, str]], *, verbose: bool) -> None:
+    if verbose:
+        for path, reason in skipped:
+            print(f"  - skipped file {path}: {reason}")
+        return
+    by_reason: dict[str, list[str]] = {}
+    for path, reason in skipped:
+        by_reason.setdefault(reason, []).append(path)
+    for reason, paths in by_reason.items():
+        examples = ", ".join(paths[:3])
+        more = f", +{len(paths) - 3} more" if len(paths) > 3 else ""
+        print(f"  - skipped {len(paths)} file(s), {reason}: {examples}{more}")
+    if any(len(paths) > 3 for paths in by_reason.values()):
+        print("    (pass --verbose to list every skipped file)")
+
+
+def _is_local(skill: sqlite3.Row) -> bool:
+    return str(skill["source_type"] or "") == LOCAL_SOURCE_TYPE
+
+
 def _search(args: argparse.Namespace) -> int:
     if args.limit < 1 or args.limit > 200:
         raise ValueError("--limit must be between 1 and 200")
@@ -348,14 +430,17 @@ def _search(args: argparse.Namespace) -> int:
     finally:
         registry.close()
     if not results:
-        print("No local matches. Run `forge sync --source skills-sh --metadata-only` first.")
+        print("No local matches. Add Skills with `forge import <dir>` or `forge sync --source skills-sh --metadata-only`.")
         return 0
     for index, result in enumerate(results, start=1):
         description = str(result["description"] or "").replace("\n", " ").strip()
         if len(description) > 160:
             description = f"{description[:157]}..."
         print(f"{index}. {result['id']} - {result['name']}")
-        print(f"   source: {result['source_repo']} | installs: {result['install_count']}")
+        if _is_local(result):
+            print(f"   source: {result['source_repo']}")
+        else:
+            print(f"   source: {result['source_repo']} | installs: {result['install_count']}")
         if description:
             print(f"   {description}")
     return 0
@@ -367,7 +452,9 @@ def _inspect(args: argparse.Namespace) -> int:
         skill = registry.get_skill(args.skill_id)
         if skill is None:
             raise ValueError(f"Skill not found locally: {args.skill_id}. Run `forge search` or `forge sync` first.")
-        if (skill["latest_seen_version_id"] is None or args.refresh) and not args.no_fetch:
+        if _is_local(skill) and args.refresh:
+            raise ValueError("Local Skills are refreshed by re-running `forge import <dir>` with the same --label.")
+        if (skill["latest_seen_version_id"] is None or args.refresh) and not args.no_fetch and not _is_local(skill):
             adapter = SkillsShAdapter(forge_home=str(home))
             detail = adapter.fetch_skill(args.skill_id)
             registry.store_detail(args.skill_id, detail, snapshots_root=home / "snapshots")
@@ -379,7 +466,8 @@ def _inspect(args: argparse.Namespace) -> int:
     print(f"ID: {skill['id']}")
     print(f"Name: {skill['name']}")
     print(f"Source: {skill['source_repo']}")
-    print(f"Installs: {skill['install_count']}")
+    if not _is_local(skill):
+        print(f"Installs: {skill['install_count']}")
     print(f"Description: {skill['description'] or '(none)'}")
     print(f"Cached detail: {'yes' if skill['latest_seen_version_id'] is not None else 'no'}")
     if skill["content_hash"]:
@@ -403,8 +491,16 @@ def _inspect(args: argparse.Namespace) -> int:
 def _audit_skill(args: argparse.Namespace) -> int:
     home, registry = _registry(args.forge_home)
     try:
-        if registry.get_skill(args.skill_id) is None:
+        skill = registry.get_skill(args.skill_id)
+        if skill is None:
             raise ValueError(f"Skill not found locally: {args.skill_id}")
+        if _is_local(skill):
+            print("Locally imported Skills have no upstream audit. Forge's static audit ran at import:")
+            for audit in registry.get_audits(args.skill_id):
+                print(f"{audit['provider']}: {audit['status']} / {audit['risk_level'] or 'unknown'}")
+                if audit["summary"]:
+                    print(f"  {audit['summary']}")
+            return 0
         audits = SkillsShAdapter(forge_home=str(home)).fetch_audit(args.skill_id)
         registry.store_external_audits(args.skill_id, audits)
         cached = registry.get_audits(args.skill_id)
@@ -486,7 +582,10 @@ def _recommend(args: argparse.Namespace) -> int:
     finally:
         registry.close()
     if not recommendations:
-        print("No project-aware local recommendations yet. Run `forge sync --source skills-sh --metadata-only` first.")
+        print(
+            "No project-aware local recommendations yet. Add Skills with `forge import <dir>` "
+            "or `forge sync --source skills-sh --metadata-only`."
+        )
         return 0
     for index, recommendation in enumerate(recommendations, start=1):
         print(f"{index}. {recommendation.name} ({recommendation.skill_id})")
@@ -640,7 +739,7 @@ def _plan(args: argparse.Namespace) -> int:
         for skill_id in gate.hallucinated_ids:
             print(f"  x {skill_id}")
     if result.retrieved == 0:
-        print("No local candidates matched. Run `forge sync --source skills-sh --metadata-only` first.")
+        print("No local candidates matched. Add Skills with `forge import <dir>` or `forge sync --source skills-sh --metadata-only`.")
     print("\nSelected:")
     if not gate.admitted:
         print("  (none survived the policy gate)")

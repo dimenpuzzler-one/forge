@@ -20,7 +20,7 @@ what risk level. A model's selection is a proposal; admission is a separate dete
 decision that the model cannot influence.
 
 **Current honest status.** The safety boundary is demonstrated by tests — six adversarial
-probes covering every ADR-006 invariant pass, across 99 tests that make no network call. On
+probes covering every ADR-006 invariant pass, across 133 tests that make no network call. On
 planning quality the benchmark shows a real but one-sided effect: a semantic reranker does not
 find more of the right Skills, but it removes nearly all the wrong ones.
 
@@ -28,6 +28,48 @@ Five defects found by the benchmark and by running Forge against itself are fixe
 against the live catalog ([V2.1c](#v21c-real-catalog-hardening)). Forge is a policy-bounded
 planner foundation — not a system that has been shown to produce better software than a good
 prompt.
+
+## Quickstart
+
+No account, token, or network access is needed after installation. Python 3.12+.
+
+```bash
+pip install "git+https://github.com/dimenpuzzler-one/forge"
+git clone https://github.com/anthropics/skills   # or any folder of Skills, e.g. ~/.claude/skills
+
+forge import skills --label anthropic            # register every SKILL.md it contains
+forge search "pdf forms"
+forge inspect local/anthropic/skills/pdf         # file list, license, hash, static audit
+cd path/to/your-project
+forge scan && forge recommend
+forge plan "extract tables from invoices"        # proposal only; Forge admits
+forge pin local/anthropic/skills/pdf --reason "invoice import"
+```
+
+Skill ids follow the folder layout, so `forge search` shows the exact id to use. Re-running
+`forge import` with the same `--label` records a new immutable version only for Skills whose
+content changed; existing pins never move.
+
+### Use Forge from Claude Code
+
+This repository is also a Claude Code plugin marketplace. The `forge-skills` plugin teaches
+the agent to drive Forge and adds a review checklist for third-party Skills:
+
+```text
+/plugin marketplace add dimenpuzzler-one/forge
+/plugin install forge-skills@forge
+```
+
+| Skill | Use it to |
+| --- | --- |
+| `forge` | find, inspect, plan, and pin Skills with the Forge CLI, relaying evidence instead of deciding for you |
+| `skill-audit` | review a third-party Skill (scripts, hooks, `allowed-tools`, exfiltration and override patterns) before adopting it |
+
+The Skills live in [`plugins/forge-skills/skills/`](plugins/forge-skills/skills/), so
+`forge import plugins/forge-skills/skills --label forge` also works as an offline demo.
+Forge's own static audit rates `skill-audit` `warn / medium`, because the checklist names the
+`curl` and credential patterns it looks for. That is the expected limit of a lexical scan:
+it flags, a human decides.
 
 ## Safety and storage boundaries
 
@@ -41,19 +83,24 @@ prompt.
 
 ## Install and run
 
-Requires Python 3.12+.
+Requires Python 3.12+. Forge has no runtime dependencies.
 
-```powershell
-cd C:\dev\forge
+```bash
+pip install "git+https://github.com/dimenpuzzler-one/forge"   # latest main
+# or, for development
+git clone https://github.com/dimenpuzzler-one/forge && cd forge
 python -m pip install --no-deps -e .
 forge doctor
 ```
 
 Use a throwaway data directory while evaluating Forge:
 
+```bash
+export FORGE_HOME="$PWD/.forge-data"        # bash / zsh
+```
+
 ```powershell
-$env:FORGE_HOME = "$PWD\.forge-data"
-forge doctor
+$env:FORGE_HOME = "$PWD\.forge-data"         # PowerShell
 ```
 
 `FORGE_HOME` is global registry storage; it is not the `.forge` directory that `forge scan` creates inside a scanned project.
@@ -61,7 +108,8 @@ forge doctor
 For persistent local skills.sh authentication, put only the required token in the global, Git-unrelated file:
 
 ```text
-%USERPROFILE%\.forge\credentials.env
+~/.forge/credentials.env                     # macOS / Linux
+%USERPROFILE%\.forge\credentials.env         # Windows
 ```
 
 `forge doctor` reports only `skills.sh auth: available|missing` and `auth source: process-env|forge-local-env|none`; it never prints the token.
@@ -103,6 +151,32 @@ eight retrieval queries on domains the project does not have.
 
 Context files are `schemaVersion: 2`. `stack` and `domains` keep their shape but now contain
 only `used` technologies; `mentioned` and `signals` are additive.
+
+### Import local Skills
+
+```bash
+forge import ~/.claude/skills --label personal
+forge import ./vendor/skills --label vendor
+```
+
+Every directory that contains a `SKILL.md` becomes one Skill with the id
+`local/<label>/<path>`. Its files are read as UTF-8 text and stored through the same path as
+`forge inspect`: path validation, 1 MiB per file and 5 MiB per Skill, content hashing,
+immutable snapshots, and the static audit. Nothing is executed.
+
+The import deliberately leaves out symlinks, `.git`/`node_modules`/virtualenv folders, binary
+files, and secret-looking names (`.env*`, `*.pem`, `*.key`, `credentials*`, SSH keys). It
+lists each skipped file with its reason. A nested `SKILL.md` is a separate Skill, never part
+of its parent. A Skill over the size limit is rejected as a whole, so no metadata row is left
+without a cached version.
+
+Forge stores text only. A Skill that ships fonts, images, or archives is cached without them,
+so `forge use` and `forge bundle` produce reference material, not a complete install; use the
+upstream folder itself to run such a Skill.
+
+`name`, `description`, and `license` come from the SKILL.md frontmatter. Locally imported
+Skills have no upstream audit, so `forge audit-skill` reports Forge's static result, and
+`forge inspect --refresh` tells you to re-import instead of contacting skills.sh.
 
 ### Sync metadata
 
@@ -452,18 +526,20 @@ The repository uses a small Python monorepo boundary:
 - `packages/registry/` — SQLite migrations, versions, snapshots, audits
 - `packages/runtime/` — generic filesystem session bundles
 - `packages/search/` — local search boundary
-- `packages/sources/` — skills.sh adapter and sync resilience
+- `packages/sources/` — skills.sh adapter, local directory source, and sync resilience
 
-Run the current checks on Windows PowerShell:
+Run the checks after an editable install (`python -m pip install --no-deps -e .`):
 
-```powershell
-$env:PYTHONPATH = 'apps/cli;packages/benchmark;packages/compose;packages/core;packages/planner;packages/project;packages/registry;packages/runtime;packages/sources;packages/search'
+```bash
 python -m compileall -q apps packages tests
 python -m unittest discover -s tests -t . -v
-forge benchmark          # exits non-zero if an ADR-006 policy probe regresses
+forge benchmark --output "$(mktemp -d)"   # exits non-zero if an ADR-006 policy probe regresses
 ```
 
-All 99 tests run offline. The two network providers expose a `_post` seam that the tests
+CI runs the same commands on Linux, macOS, and Windows for Python 3.12 and 3.13. See
+[CONTRIBUTING.md](CONTRIBUTING.md).
+
+All 133 tests run offline. The two network providers expose a `_post` seam that the tests
 replace, so request shape, error translation, and response parsing are verified without a key.
 
 That cannot prove a live endpoint accepts the request, so the OpenAI path was additionally

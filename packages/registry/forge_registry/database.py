@@ -416,6 +416,18 @@ class Registry:
             (name,),
         ).fetchone()
 
+    def local_sources(self) -> list[sqlite3.Row]:
+        return list(
+            self.connection.execute(
+                """
+                SELECT src.name, src.base_url, src.last_sync_at, COUNT(s.id) AS skill_count
+                FROM sources AS src LEFT JOIN skills AS s ON s.source_id = src.id
+                WHERE src.type = 'local'
+                GROUP BY src.id ORDER BY src.name
+                """
+            )
+        )
+
     def search(self, query: str, *, limit: int = 20) -> list[sqlite3.Row]:
         tokens = [token for token in query.replace('"', " ").split() if token]
         if not tokens:
@@ -591,7 +603,14 @@ class Registry:
             )
         )
 
-    def store_detail(self, skill_id: str, detail: dict[str, Any], *, snapshots_root: Path) -> tuple[int, str]:
+    def store_detail(
+        self,
+        skill_id: str,
+        detail: dict[str, Any],
+        *,
+        snapshots_root: Path,
+        snapshot_namespace: str = "skills-sh",
+    ) -> tuple[int, str]:
         skill = self.get_skill(skill_id)
         if skill is None:
             raise ValidationError(f"Cannot cache unknown skill: {skill_id}")
@@ -624,7 +643,7 @@ class Registry:
         content_hash = detail.get("hash")
         if not isinstance(content_hash, str) or not content_hash:
             content_hash = digest.hexdigest()
-        snapshot_root = snapshots_root / "skills-sh" / _safe_snapshot_name(skill_id) / content_hash
+        snapshot_root = snapshots_root / snapshot_namespace / _safe_snapshot_name(skill_id) / content_hash
         snapshot_root.mkdir(parents=True, exist_ok=True)
         license_value = detail.get("license")
         license_spdx = license_value.strip() if isinstance(license_value, str) and license_value.strip() else None

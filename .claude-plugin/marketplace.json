@@ -1,0 +1,14 @@
+{
+  "name": "forge",
+  "description": "Skills for choosing, auditing, and pinning Agent Skills with Forge.",
+  "owner": {
+    "name": "dimenpuzzler-one"
+  },
+  "plugins": [
+    {
+      "name": "forge-skills",
+      "source": "./plugins/forge-skills",
+      "description": "Find, vet, and pin Agent Skills with the Forge CLI, and audit third-party Skills before adopting them."
+    }
+  ]
+}

@@ -1,0 +1,11 @@
+{
+  "name": "forge-skills",
+  "version": "0.2.0",
+  "description": "Find, vet, and pin Agent Skills with the Forge CLI, and audit third-party Skills before adopting them.",
+  "author": {
+    "name": "dimenpuzzler-one"
+  },
+  "homepage": "https://github.com/dimenpuzzler-one/forge",
+  "repository": "https://github.com/dimenpuzzler-one/forge",
+  "license": "Apache-2.0"
+}
