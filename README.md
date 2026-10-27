@@ -556,3 +556,5 @@ See [MVP-0 architecture](docs/architecture/mvp-0.md) and [ADRs](docs/decisions/)
 ## License and provenance
 
 Forge retains source/provenance fields and treats external Skill licenses as a separate future enrichment concern. Public availability does not grant Forge permission to redistribute cached Skill content. The local cache is for the user's inspection; a future public Explorer must apply license policy before exposing full contents.
+
+Forge's own source code is licensed under the [Apache License 2.0](LICENSE). That license covers this repository only; it does not extend to external Skills that Forge indexes or caches.

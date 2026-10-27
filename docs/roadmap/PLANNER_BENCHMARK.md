@@ -520,7 +520,7 @@ FIX-V2.1-FIRST recommendation stands on target-runtime evidence.
 Status: `blocked_external_fixture`.
 
 The report artifacts referenced in Vol.2 Appendix A live at
-`C:\Users\beric\.forge\history\oracross\2026-08-12-growth-visual-redesign\` and are outside
+`%USERPROFILE%\.forge\history\oracross\2026-08-12-growth-visual-redesign\` and are outside
 this workspace. They were never read. Scenario design used only the narrative in
 `forge-development-plan-vol2.md` §4, and no synthetic file is presented as an ORACROSS
 artifact. Scenarios S01 and S08 encode the shape of that case; their ground truth is

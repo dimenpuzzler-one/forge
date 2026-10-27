@@ -8,7 +8,7 @@ version = "0.1.0"
 description = "Local-first skill exploration and engineering toolkit"
 readme = "README.md"
 requires-python = ">=3.12"
-license = { text = "MIT" }
+license = { text = "Apache-2.0" }
 authors = [{ name = "Forge contributors" }]
 dependencies = []
 

@@ -82,7 +82,7 @@ The first measured full catalog recheck took `229.094s` for `9,610` Skills over 
 
 ## Global skills.sh authentication
 
-Forge resolves skills.sh authentication without depending on the current directory: process `VERCEL_OIDC_TOKEN` first, then the Forge-owned `<FORGE_HOME>/credentials.env`, then the known Forge checkout `.env.local` for development compatibility. It never searches a target project's `.env` file. The current token was migrated as a single `VERCEL_OIDC_TOKEN` entry into `C:\Users\beric\.forge\credentials.env` with current-user-only ACLs. `forge doctor` exposes only availability and source labels.
+Forge resolves skills.sh authentication without depending on the current directory: process `VERCEL_OIDC_TOKEN` first, then the Forge-owned `<FORGE_HOME>/credentials.env`, then the known Forge checkout `.env.local` for development compatibility. It never searches a target project's `.env` file. The current token was migrated as a single `VERCEL_OIDC_TOKEN` entry into `%USERPROFILE%\.forge\credentials.env` with current-user-only ACLs. `forge doctor` exposes only availability and source labels.
 
 Live acceptance from `C:\dev\oracross`: `forge search`, `forge inspect --refresh`, and `forge audit-skill` all succeeded through global Forge authentication; live audit partners and Forge static audit returned results without exposing the token.
 
